@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+ccxt
+pandas
+nltk
+aiohttp
+websockets

@@ -1,0 +1,64 @@
+//@version=5
+indicator("Autonomous Pump Breakout Signals", overlay=true, precision=6)
+
+// --------------------------------------------------------------------------
+// 1. INPUT PARAMETERS (Matching Terminal Gating Configuration)
+// --------------------------------------------------------------------------
+volLength = input.int(49, title="Volume SMA Length", minval=5, maxval=200, tooltip="Number of historical candles to average for base volume.")
+volMultThreshold = input.float(3.0, title="Volume Multiplier Gate", minval=1.0, maxval=20.0, step=0.1, tooltip="Volume must exceed this multiple of average volume.")
+priceVelocityThreshold = input.float(1.5, title="Price Velocity Gate (%)", minval=0.1, maxval=10.0, step=0.1, tooltip="Price increase over last 2 candles must exceed this percentage.")
+useTrailingStop = input.bool(true, title="Enable Trailing Stop Loss Exit", tooltip="Show Sell signals based on trailing stop loss.")
+trailingStopPct = input.float(2.0, title="Trailing Stop Loss (%)", minval=0.5, maxval=20.0, step=0.1, tooltip="Percent below peak price to trigger an exit.")
+
+// --------------------------------------------------------------------------
+// 2. TECHNICAL CALCULATIONS
+// --------------------------------------------------------------------------
+// Average volume of preceding candles (excluding current candle to match scanner)
+volSMA = ta.sma(volume[1], volLength)
+volMult = volSMA > 0 ? (volume / volSMA) : 0.0
+
+// Price velocity: percentage change over the last 2 candles (current close vs 2 bars ago close)
+priceVelocity = ((close - close[2]) / close[2]) * 100
+
+// --------------------------------------------------------------------------
+// 3. SIGNAL TRIGGER CONDITIONS
+// --------------------------------------------------------------------------
+buySignal = (volMult > volMultThreshold) and (priceVelocity > priceVelocityThreshold)
+
+// --------------------------------------------------------------------------
+// 4. TRAILING STOP LOSS LOGIC (SELL SIGNALS)
+// --------------------------------------------------------------------------
+var float peakPrice = na
+var float stopPrice = na
+var bool inPosition = false
+
+if buySignal
+    peakPrice := close
+    stopPrice := close * (1.0 - trailingStopPct / 100.0)
+    inPosition := true
+else if inPosition and useTrailingStop
+    // Keep track of the highest price since the Buy signal
+    peakPrice := math.max(peakPrice, close)
+    stopPrice := peakPrice * (1.0 - trailingStopPct / 100.0)
+    
+    // Check if the current close breaches the stop price
+    if close < stopPrice
+        inPosition := false
+        peakPrice := na
+        stopPrice := na
+
+// Trigger sell signal when position state switches from True to False
+sellSignal = ta.change(inPosition) == -1
+
+// --------------------------------------------------------------------------
+// 5. VISUAL RENDERING (CHARTS OVERLAYS & SCROLLBARS)
+// --------------------------------------------------------------------------
+// Highlight breakout bars
+barcolor(buySignal ? color.new(color.lime, 50) : na, title="Breakout Bar Highlight")
+
+// Plot Buy & Sell shapes
+plotshape(buySignal, title="Buy (Breakout Entry)", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal, text="BUY", textcolor=color.green)
+plotshape(sellSignal, title="Sell (Trailing Exit)", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, text="SELL", textcolor=color.red)
+
+// Plot trailing stop level for active positions
+plot(inPosition and useTrailingStop ? stopPrice : na, title="Active Stop Loss Line", color=color.orange, style=plot.style_linebr, linewidth=1)

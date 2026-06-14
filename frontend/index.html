@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Crypto Pump Scanner Terminus</title>
+    
+    <!-- Custom Cyberpunk Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Local Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- TradingView widget client -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+</head>
+<body>
+    <!-- Background Scanline effect & Floating Glow Orbs -->
+    <div class="scanlines"></div>
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+
+    <div class="terminal-container">
+        <!-- HEADER -->
+        <header class="terminal-header">
+            <div class="header-logo">
+                <div class="pulse-icon red-pulse" id="scanner-state-pulse"></div>
+                <h1>PUMP_SCANNER//<span class="version-tag">v2.2.0-ACCUM</span></h1>
+            </div>
+            
+            <!-- Toggles Deck -->
+            <div class="header-controls">
+                <button type="button" class="btn-control" id="btn-theme-toggle" title="Toggle Light/Dark Mode">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+                <button type="button" class="btn-control" id="btn-lang-toggle" title="Switch Language">
+                    <span>ES</span>
+                </button>
+            </div>
+
+            <div class="header-stats">
+                <div class="stat-box">
+                    <span class="stat-label" data-translate="SYSTEM_STATUS">SYSTEM_STATUS</span>
+                    <span class="stat-value text-red" id="system-status-text">OFFLINE</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label" data-translate="TRACKED_PAIRS">TRACKED_PAIRS</span>
+                    <span class="stat-value text-cyan" id="tracked-pairs-count">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label" data-translate="RATE_LIMIT">RATE_LIMIT</span>
+                    <span class="stat-value text-green" id="rate-limit-status">NOMINAL</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN GRID LAYOUT -->
+        <main class="terminal-grid">
+            
+            <!-- LEFT COLUMN: CONTROL DECK & SETTINGS -->
+            <section class="grid-panel control-deck">
+                <div class="panel-header">
+                    <i class="fa-solid fa-sliders text-cyan"></i>
+                    <h2 data-translate="CONTROL_DECK">CONTROL_DECK</h2>
+                </div>
+                <div class="panel-body">
+                    <!-- Engine Toggles -->
+                    <div class="control-group action-buttons">
+                        <button class="btn btn-primary" id="btn-start-scanner">
+                            <i class="fa-solid fa-play"></i> <span data-translate="START_SCANNER">START SCANNER</span>
+                        </button>
+                        <button class="btn btn-danger disabled" id="btn-stop-scanner" disabled>
+                            <i class="fa-solid fa-stop"></i> <span data-translate="STOP_SCANNER">STOP SCANNER</span>
+                        </button>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <!-- Config Settings Form -->
+                    <form id="scanner-config-form" class="config-form">
+                        <div class="form-group">
+                            <label for="input-webhook-url">
+                                <span data-translate="WEBHOOK_ALERT_URL">WEBHOOK_ALERT_URL</span>
+                                <span class="tooltip-container">
+                                    <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                    <span class="tooltip-content" data-translate="TOOLTIP_WEBHOOK_URL">Target URL to dispatch JSON alerts when a pump score matches or exceeds the threshold.</span>
+                                </span>
+                            </label>
+                            <div class="input-with-icon">
+                                <i class="fa-solid fa-link text-dim"></i>
+                                <input type="url" id="input-webhook-url" required placeholder="https://endpoint.com/webhook">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="input-deepseek-key">
+                                <span data-translate="DEEPSEEK_API_KEY">DEEPSEEK_API_KEY (OPTIONAL)</span>
+                                <span class="tooltip-container">
+                                    <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                    <span class="tooltip-content" data-translate="TOOLTIP_DEEPSEEK_KEY">Input your DeepSeek API key to activate the AI Agent Decision Layer. If left empty, local heuristics will evaluate breakouts.</span>
+                                </span>
+                            </label>
+                            <div class="input-with-icon">
+                                <i class="fa-solid fa-key text-dim"></i>
+                                <input type="password" id="input-deepseek-key" placeholder="••••••••">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>
+                                    <span data-translate="EXCHANGES">EXCHANGES</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_EXCHANGES">Select the API liquidity pools to source assets from.</span>
+                                    </span>
+                                </label>
+                                <div class="checkbox-group">
+                                    <label class="custom-checkbox">
+                                        <input type="checkbox" name="exchange" value="binance" checked id="chk-exchange-binance">
+                                        <span class="checkmark"></span> BINANCE
+                                    </label>
+                                    <label class="custom-checkbox">
+                                        <input type="checkbox" name="exchange" value="bybit" id="chk-exchange-bybit">
+                                        <span class="checkmark"></span> BYBIT
+                                    </label>
+                                    <label class="custom-checkbox">
+                                        <input type="checkbox" name="exchange" value="hyperliquid" id="chk-exchange-hyperliquid">
+                                        <span class="checkmark"></span> HYPERLIQUID
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <span data-translate="INSTRUMENTS">INSTRUMENTS</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_INSTRUMENTS">Target spot exchange books or futures leverage swaps contracts.</span>
+                                    </span>
+                                </label>
+                                <div class="checkbox-group">
+                                    <label class="custom-checkbox">
+                                        <input type="checkbox" name="instrument" value="spot" checked id="chk-inst-spot">
+                                        <span class="checkmark"></span> SPOT
+                                    </label>
+                                    <label class="custom-checkbox">
+                                        <input type="checkbox" name="instrument" value="future" id="chk-inst-future">
+                                        <span class="checkmark"></span> FUTURES
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="input-interval-sec">
+                                    <span data-translate="SCAN_INTERVAL">SCAN_INTERVAL (SEC)</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_INTERVAL">Refresh cooldown period between active scanning cycles.</span>
+                                    </span>
+                                </label>
+                                <input type="number" id="input-interval-sec" min="10" max="3600" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="input-max-pairs">
+                                    <span data-translate="MAX_PAIRS_TRACKED">MAX_PAIRS_TRACKED</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_MAX_PAIRS">Limit discoverable pairs sorted by 24h volume to focus processing bandwidth.</span>
+                                    </span>
+                                </label>
+                                <input type="number" id="input-max-pairs" min="5" max="500" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="input-volume-threshold">
+                                    <span data-translate="VOL_MULTIPLIER_GATE">VOL_MULTIPLIER_GATE</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_VOL_MULT">How many times the current 5m candle volume must exceed the average volume of the previous 49 candles.</span>
+                                    </span>
+                                </label>
+                                <div class="input-suffix">
+                                    <input type="number" id="input-volume-threshold" step="0.1" min="1.0" max="20.0" required>
+                                    <span class="suffix">x</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="input-price-threshold">
+                                    <span data-translate="PRICE_VELOCITY_GATE">PRICE_VELOCITY_GATE</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_PRICE_VEL">The minimum price gain percentage over the last 2 periods (10 minutes) to trigger breakout status.</span>
+                                    </span>
+                                </label>
+                                <div class="input-suffix">
+                                    <input type="number" id="input-price-threshold" step="0.1" min="0.1" max="15.0" required>
+                                    <span class="suffix">%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-secondary" id="btn-save-settings">
+                                <i class="fa-solid fa-floppy-disk"></i> <span data-translate="SAVE_CONFIGURATION">SAVE_CONFIGURATION</span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="divider"></div>
+
+                    <!-- Webhook test and status -->
+                    <div class="simulation-deck">
+                        <label data-translate="INTELLIGENCE_SIMULATOR">INTELLIGENCE_SIMULATOR</label>
+                        <p class="panel-subtext" data-translate="SIMULATOR_SUBTEXT">Trigger a mock Stage 3 breakout to test alerts, metrics calculations, and webhook payload routing.</p>
+                        <button class="btn btn-neon" id="btn-trigger-simulation">
+                            <i class="fa-solid fa-bolt"></i> <span data-translate="FIRE_SIMULATED_ALERT">FIRE SIMULATED ALERT</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MIDDLE COLUMN: PIPELINE STATUS & BREAKOUT RADAR -->
+            <section class="grid-panel breakout-radar">
+                <div class="panel-header">
+                    <i class="fa-solid fa-satellite-dish text-orange"></i>
+                    <h2 data-translate="BREAKOUT_RADAR">BREAKOUT_RADAR</h2>
+                </div>
+                <div class="panel-body flex-column">
+                    <!-- Scanning Pipeline Schematic -->
+                    <div class="pipeline-schematic">
+                        <div class="pipeline-node" id="node-accum">
+                            <span class="node-num">00</span>
+                            <span class="node-name" data-translate="ACCUM_RADAR">ACCUM_RADAR</span>
+                        </div>
+                        <div class="pipeline-connector" id="conn-0"></div>
+                        <div class="pipeline-node active" id="node-discovery">
+                            <span class="node-num">01</span>
+                            <span class="node-name" data-translate="DISCOVERY">DISCOVERY</span>
+                        </div>
+                        <div class="pipeline-connector" id="conn-1"></div>
+                        <div class="pipeline-node" id="node-scan">
+                            <span class="node-num">02</span>
+                            <span class="node-name" data-translate="GATING_SCAN">GATING_SCAN</span>
+                        </div>
+                        <div class="pipeline-connector" id="conn-2"></div>
+                        <div class="pipeline-node" id="node-enrich">
+                            <span class="node-num">03</span>
+                            <span class="node-name" data-translate="ENRICHMENT">ENRICHMENT</span>
+                        </div>
+                        <div class="pipeline-connector" id="conn-3"></div>
+                        <div class="pipeline-node" id="node-webhook">
+                            <span class="node-num">04</span>
+                            <span class="node-name" data-translate="DISPATCH">DISPATCH</span>
+                        </div>
+                    </div>
+
+                    <!-- Alerts Feed -->
+                    <div class="alerts-feed-wrapper">
+                        <h3 data-translate="ACTIVE_BREAKOUTS_HEADER">ACTIVE_BREAKOUT_ALERTS (SCORE &ge; 65/100)</h3>
+                        <div class="alerts-feed-container" id="alerts-feed-container">
+                            <div class="no-alerts-placeholder" id="no-alerts-placeholder">
+                                <i class="fa-solid fa-satellite-dish fa-spin-slow"></i>
+                                <p data-translate="NO_ACTIVE_BREAKOUTS">NO ACTIVE BREAKOUTS DETECTED</p>
+                                <span class="placeholder-subtext" data-translate="AWAITING_BREAKOUTS">Awaiting Stage 2 breakout metrics...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chart Panel -->
+                    <div class="chart-panel-wrapper">
+                        <div class="panel-header inner-panel-header">
+                            <i class="fa-solid fa-chart-line text-cyan"></i>
+                            <h3 id="chart-title"><span data-translate="LIVE_CHART">LIVE CHART</span>: <span id="current-chart-ticker">NONE</span></h3>
+                        </div>
+                        <div class="chart-container" id="tv-chart-container">
+                            <div class="chart-placeholder" id="tv-chart-placeholder">
+                                <i class="fa-solid fa-arrow-pointer"></i>
+                                <p data-translate="CHART_PLACEHOLDER">Select a ticker from the watchlist to display its live chart.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ACCUMULATION RADAR PANEL -->
+            <section class="grid-panel accum-radar-panel">
+                <div class="panel-header">
+                    <i class="fa-solid fa-magnifying-glass-chart text-purple"></i>
+                    <h2 data-translate="ACCUM_RADAR_TITLE">ACCUM_RADAR</h2>
+                    <span class="accum-live-badge" id="accum-candidate-count">0 CANDIDATES</span>
+                </div>
+                <div class="panel-body flex-column">
+                    <!-- Simulation Button -->
+                    <div class="accum-sim-bar">
+                        <span class="panel-subtext" data-translate="ACCUM_SUBTEXT">Detecting pre-pump accumulation patterns before breakout develops.</span>
+                        <button class="btn btn-purple" id="btn-trigger-accum-sim">
+                            <i class="fa-solid fa-eye"></i> <span data-translate="FIRE_ACCUM_SIM">SIMULATE ACCUM</span>
+                        </button>
+                    </div>
+                    <!-- Score Legend -->
+                    <div class="accum-legend">
+                        <span class="legend-dot dot-watching"></span><span>WATCHING ≥55</span>
+                        <span class="legend-dot dot-coiling"></span><span>COILING ≥70</span>
+                        <span class="legend-dot dot-prepump"></span><span>PRE-PUMP ≥85</span>
+                    </div>
+                    <!-- Candidates Feed -->
+                    <div class="accum-feed" id="accum-feed">
+                        <div class="accum-placeholder" id="accum-placeholder">
+                            <i class="fa-solid fa-wave-square"></i>
+                            <p data-translate="ACCUM_EMPTY">No accumulation patterns detected yet.</p>
+                            <span data-translate="ACCUM_EMPTY_SUB">Stage 0 radar scanning on each cycle...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT COLUMN: MONITOR GRID & SYSTEM LOGS -->
+            <section class="grid-panel telemetry-deck">
+                <!-- Monitor Grid -->
+                <div class="inner-panel monitor-grid">
+                    <div class="panel-header">
+                        <div class="header-left">
+                            <i class="fa-solid fa-table-list text-green"></i>
+                            <h2 data-translate="LIVE_WATCHLIST">LIVE_WATCHLIST</h2>
+                        </div>
+                        <div class="search-box">
+                            <i class="fa-solid fa-search"></i>
+                            <input type="text" id="input-search-pairs" placeholder="FILTER TICKER..." data-translate-placeholder="FILTER_TICKER_PLACEHOLDER">
+                        </div>
+                    </div>
+                    <div class="panel-body table-wrapper">
+                        <table class="watchlist-table" id="watchlist-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-sort="symbol"><span data-translate="SYMBOL">SYMBOL</span> <i class="fa-solid fa-sort"></i></th>
+                                    <th class="sortable" data-sort="price"><span data-translate="PRICE">PRICE</span> <i class="fa-solid fa-sort"></i></th>
+                                    <th class="sortable" data-sort="volume_multiplier"><span data-translate="VOL_MULT">VOL_MULT</span> <i class="fa-solid fa-sort"></i></th>
+                                    <th class="sortable" data-sort="price_change_2vec"><span data-translate="VELOCITY">VELOCITY (10m)</span> <i class="fa-solid fa-sort"></i></th>
+                                    <th class="sortable" data-sort="is_breakout"><span data-translate="STATUS">STATUS</span> <i class="fa-solid fa-sort"></i></th>
+                                </tr>
+                            </thead>
+                            <tbody id="watchlist-table-body">
+                                <tr>
+                                    <td colspan="5" class="table-placeholder">Awaiting first scan loop results...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Logs view -->
+                <div class="inner-panel console-logs">
+                    <div class="panel-header">
+                        <i class="fa-solid fa-terminal text-green"></i>
+                        <h2 data-translate="SYSTEM_LOGS">SYSTEM_LOGS</h2>
+                        <button class="btn-icon" id="btn-clear-logs" title="Clear console">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                    <div class="panel-body console-wrapper">
+                        <div class="console-viewport" id="console-viewport">
+                            <div class="console-line line-dim">[SYSTEM] Terminal initialized. Awaiting WebSocket link...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
