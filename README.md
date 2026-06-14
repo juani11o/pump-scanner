@@ -1,4 +1,4 @@
-# 🚀 Autonomous Crypto Pump Scanner v2.2.0
+# 🚀 JAGL Crypto PUMP SCANNER v2.2.0
 
 A real-time, autonomous cryptocurrency pump detection terminal with a **Stage 0 Accumulation Radar** — predicting pumps *before* they happen.
 

@@ -1,8 +1,8 @@
-# 🔮 Autonomous Crypto Pump Scanner — User & Operations Guide
+# 🔮 JAGL Crypto PUMP SCANNER — User & Operations Guide
 
 ![Banner](assets/pump_scanner_banner.png)
 
-Welcome to the official User & Operations Guide for the **Autonomous Crypto Pump Scanner (v2.2.0)**. This platform is an institutional-grade, multi-stage detection terminal designed to scan, track, and alert you of cryptocurrency breakout momentum and stealth accumulation patterns in real-time.
+Welcome to the official User & Operations Guide for the **JAGL Crypto PUMP SCANNER (v2.2.0)**. This platform is an institutional-grade, multi-stage detection terminal designed to scan, track, and alert you of cryptocurrency breakout momentum and stealth accumulation patterns in real-time.
 
 ---
 
