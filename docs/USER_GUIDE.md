@@ -23,14 +23,46 @@ graph TD
 
 ---
 
+---
+
 ## 🎛️ Section 1: Dashboard Interface Overview
 
-The interface is divided into four main columns designed for maximum density and low-latency situational awareness:
+Here is the live interface of your **JAGL Crypto PUMP SCANNER** in action, showing active breakouts, accumulation candidates, and real-time logs:
 
-1. **Control Deck (Left)**: Active scanning controls, webhook targets, DeepSeek API configurations, and the simulated alert injectors.
-2. **Breakout Radar (Middle-Left)**: A vertical timeline feed of confirmed Stage 2 & 3 breakouts with NLP sentiment and Open Interest metrics.
-3. **Accumulation Radar (Middle-Right)**: The Stage 0 candidate feed displaying coiling assets ranked by score.
-4. **Live Watchlist & Telemetry (Right)**: The filterable ticker matrix showing real-time price change, volume multipliers, and the embedded live TradingView interactive chart.
+![JAGL Crypto Pump Scanner Dashboard](assets/dashboard_screenshot.png)
+
+The interface is divided into four main columns designed for maximum density and low-latency situational awareness.
+
+### 🎚️ Control Deck Panel & Configs
+
+The **Control Deck (Left Column)** contains all operational controls to configure the scanner. Saving settings persists them locally to `state.json`.
+
+*   **START SCANNER / STOP SCANNER**: Toggles the backend CCXT scan loops. When stopped, the scanner ceases querying exchange endpoints.
+*   **WEBHOOK_ALERT_URL**: The HTTP POST endpoint where JSON payloads are sent. Compatible with Discord webhooks, Telegram bots, or automation hubs (n8n/Make).
+*   **DEEPSEEK_API_KEY**: Optional field. Paste your DeepSeek platform key to enable the Stage 4 AI Agent. Leave blank to bypass AI verification.
+*   **EXCHANGES (Checkboxes)**: Select the target exchange feeds. Supports **Binance**, **Bybit**, and **Hyperliquid**.
+*   **INSTRUMENTS (Checkboxes)**: Choose between **SPOT** markets or **FUTURES** (Perpetual swaps).
+*   **SCAN_INTERVAL (SEC)**: Duration (in seconds) between each scans. Lower intervals yield more responsive data but increase rate-limit consumption.
+*   **MAX_PAIRS_TRACKED**: The number of top pairs (sorted by 24h trading volume) to scan. High numbers increase CCXT payload sizes.
+*   **VOL_MULTIPLIER_GATE**: The minimum volume spike size (e.g. `3x`) relative to a 49-period average required to trigger a Stage 2 breakout.
+*   **PRICE_VELOCITY_GATE**: The minimum price percentage gain (e.g. `1.5%`) over the last two 5-minute candles required to pass Stage 2 gating.
+*   **SAVE_CONFIGURATION**: Applies changes and saves them to the backend settings structure.
+*   **INTELLIGENCE_SIMULATOR (FIRE SIMULATED ALERT)**: Inject a mock breakout candidate (e.g. BTC) through the pipeline to test webhook routing, sentiment parsing, and frontend rendering.
+
+---
+
+### 📡 Panel Feeds & Indicators
+
+*   **BREAKOUT_RADAR**: Displays a history of active, verified price breakouts. Each card details the calculated Volume Multiplier, Price Velocity, Open Interest Delta, VADER NLP sentiment score, and the final combined AI Compound Score.
+*   **ACCUM_RADAR**: Lists Stage 0 accumulation candidates.
+    *   `SIMULATE ACCUM`: Injects mock accumulation data to verify UI status indicators.
+    *   **Status Badges**:
+        *   🟡 `WATCHING` (Score ≥ 55): Low-level accumulation.
+        *   🟠 `COILING` (Score ≥ 70): Volatility compression and coiling volume.
+        *   🔴 `PRE-PUMP` (Score ≥ 85): Critical zone indicating high likelihood of an imminent pump.
+    *   **Signal Bar Charts**: Shows progress bars for the 5 component scores (Volume Coiling, Bollinger Band Squeeze, CVD Divergence, RSI Reclamation, and Support Defense).
+*   **LIVE_WATCHLIST**: A real-time matrix of the current top pairs under scan. Clicking any row loads that asset into the interactive **Live Chart** console.
+*   **SYSTEM_LOGS**: Real-time logging console that prints connection states, API rate limit auto-throttling diagnostics, and scanner cycle telemetry.
 
 ---
 
