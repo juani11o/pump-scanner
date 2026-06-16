@@ -9,13 +9,19 @@ import os
 import json
 import logging
 import random
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Cookie, Depends, Response, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import pandas as pd
+from typing import Optional, List
+import secrets
+import datetime
+import aiohttp
 
 from backend.scanner import AutonomousScanner
+from backend import users_db
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -64,6 +70,75 @@ class SettingsModel(BaseModel):
     accum_alert_threshold: float = 70.0
     enable_accumulation_alerts: bool = True
 
+class RoleUpdateModel(BaseModel):
+    role: str
+
+class FeatureUpdateModel(BaseModel):
+    webhook_enabled: int
+    deepseek_enabled: int
+    calculator_enabled: int
+    ledger_enabled: int
+
+
+class TradeCreateModel(BaseModel):
+    ticker: str
+    type: str
+    entry_price: float
+    exit_price: float
+    profit_pct: float
+    notes: Optional[str] = ""
+
+class SignupModel(BaseModel):
+    email: str
+    name: str
+    password: str
+
+class ConfirmEmailModel(BaseModel):
+    email: str
+    code: str
+
+class LoginModel(BaseModel):
+    username: str
+    password: str
+
+class ForgotPasswordModel(BaseModel):
+    email: str
+
+class ResetPasswordModel(BaseModel):
+    email: str
+    token: str
+    password: str
+
+class ConfirmUpdateModel(BaseModel):
+    confirm: bool
+
+class AdminPasswordResetModel(BaseModel):
+    password: str
+
+# Authentication dependencies
+async def get_session_token(request: Request, session_token: Optional[str] = Cookie(None)):
+    if not session_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            if auth_header.startswith("Bearer "):
+                session_token = auth_header[7:]
+            else:
+                session_token = auth_header
+    return session_token
+
+async def get_current_user(session_token: Optional[str] = Depends(get_session_token)):
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user = users_db.get_user_by_session_token(session_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+    return user
+
+async def get_current_admin(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required")
+    return user
+
 @app.on_event("startup")
 async def startup_event():
     # If scanner was marked active in persistent settings, start it automatically (State Memory Recovery)
@@ -107,11 +182,23 @@ async def broadcast_logs():
             await asyncio.sleep(1)
 
 @app.websocket("/api/ws/logs")
-async def websocket_logs(websocket: WebSocket):
+async def websocket_logs(websocket: WebSocket, token: Optional[str] = Query(None)):
+    session_token = token
+    if not session_token:
+        session_token = websocket.cookies.get("session_token")
+        
+    if not session_token:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+        
+    user = users_db.get_user_by_session_token(session_token)
+    if not user:
+        await websocket.close(code=4001, reason="Invalid session")
+        return
+
     await websocket.accept()
     active_ws_connections.append(websocket)
     
-    # Send current logs history and system status instantly
     try:
         # History
         history_payload = json.dumps({
@@ -127,9 +214,7 @@ async def websocket_logs(websocket: WebSocket):
         await websocket.send_text(history_payload)
         
         while True:
-            # Keep connection alive, listen for client-side ping or stop message
             data = await websocket.receive_text()
-            # If client requests a state refresh
             if data == "refresh":
                 refresh_payload = json.dumps({
                     "type": "STATUS_REFRESH",
@@ -150,7 +235,7 @@ async def websocket_logs(websocket: WebSocket):
             active_ws_connections.remove(websocket)
 
 @app.get("/api/status")
-async def get_status():
+async def get_status(current_user: dict = Depends(get_current_user)):
     return {
         "active": scanner.is_running,
         "settings": scanner.settings,
@@ -159,7 +244,7 @@ async def get_status():
     }
 
 @app.post("/api/settings")
-async def update_settings(settings: SettingsModel):
+async def update_settings(settings: SettingsModel, current_admin: dict = Depends(get_current_admin)):
     was_running = scanner.is_running
     if was_running:
         scanner.stop()
@@ -172,7 +257,7 @@ async def update_settings(settings: SettingsModel):
     return {"status": "SUCCESS", "settings": scanner.settings}
 
 @app.post("/api/start")
-async def start_scanner():
+async def start_scanner(current_admin: dict = Depends(get_current_admin)):
     success = scanner.start()
     if success:
         return {"status": "SUCCESS", "message": "Scanner started successfully."}
@@ -180,7 +265,7 @@ async def start_scanner():
         return {"status": "ALREADY_RUNNING", "message": "Scanner is already running."}
 
 @app.post("/api/stop")
-async def stop_scanner():
+async def stop_scanner(current_admin: dict = Depends(get_current_admin)):
     success = scanner.stop()
     if success:
         return {"status": "SUCCESS", "message": "Scanner stopped successfully."}
@@ -188,35 +273,33 @@ async def stop_scanner():
         return {"status": "ALREADY_STOPPED", "message": "Scanner is already stopped."}
 
 @app.get("/api/logs")
-async def get_logs():
+async def get_logs(current_user: dict = Depends(get_current_user)):
     return {"logs": scanner.logs_history}
 
 @app.get("/api/pairs_summary")
-async def get_pairs_summary():
-    # Return last scan results
+async def get_pairs_summary(current_user: dict = Depends(get_current_user)):
     return {"results": scanner.last_scan_results}
 
 @app.get("/api/accumulation-candidates")
-async def get_accumulation_candidates():
+async def get_accumulation_candidates(current_user: dict = Depends(get_current_user)):
     """Returns the current ranked list of Stage 0 pre-pump accumulation candidates"""
     return {"candidates": scanner.accumulation_candidates}
 
 @app.get("/api/discovery")
-async def get_discovery():
+async def get_discovery(current_user: dict = Depends(get_current_user)):
     return {"monitored_pairs": scanner.monitored_pairs}
 
 @app.post("/api/trigger_accum_simulation")
-async def trigger_accum_simulation():
+async def trigger_accum_simulation(current_admin: dict = Depends(get_current_admin)):
     """Generates a mock Stage 0 accumulation candidate to test the Accumulation Radar UI"""
     symbols = ["HYPE/USDC:USDC", "SOL/USDC:USDC", "WIF/USDC:USDC", "PEPE/USDC:USDC", "ARB/USDC:USDC"]
     symbol = random.choice(symbols)
 
-    # Simulate individual signal scores
-    s1 = round(random.uniform(12.0, 28.0), 2)   # Volume Coiling (max 30)
-    s2 = round(random.uniform(8.0, 22.0), 2)    # BB Squeeze (max 25)
-    s3 = round(random.uniform(5.0, 18.0), 2)    # CVD Divergence (max 20)
-    s4 = round(random.uniform(4.0, 14.0), 2)    # RSI Reclamation (max 15)
-    s5 = round(random.uniform(2.0, 9.0), 2)     # Support Zone (max 10)
+    s1 = round(random.uniform(12.0, 28.0), 2)
+    s2 = round(random.uniform(8.0, 22.0), 2)
+    s3 = round(random.uniform(5.0, 18.0), 2)
+    s4 = round(random.uniform(4.0, 14.0), 2)
+    s5 = round(random.uniform(2.0, 9.0), 2)
     total = round(s1 + s2 + s3 + s4 + s5, 1)
 
     if total >= 85:
@@ -258,9 +341,8 @@ async def trigger_accum_simulation():
 
     return {"status": "SUCCESS", "message": "Accumulation simulation fired.", "data": payload}
 
-
 @app.post("/api/trigger_simulation")
-async def trigger_simulation():
+async def trigger_simulation(current_admin: dict = Depends(get_current_admin)):
     """Generates a mock Stage 3 breakout to test webhook flow and dashboard visuals"""
     symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT", "AVAX/USDT", "LINK/USDT", "ADA/USDT", "NEAR/USDT"]
     symbol = random.choice(symbols)
@@ -272,17 +354,14 @@ async def trigger_simulation():
     oi_delta = round(random.uniform(8.0, 28.5), 2)
     sentiment_score = round(random.uniform(0.68, 0.96), 2)
     
-    # Formula: (0.4 * min(vol_mult, 10)) + (0.3 * min(oi_delta, 20)) + (0.3 * (sentiment_score * 10))
     comp_vol = 0.4 * min(vol_mult, 10.0)
     comp_oi = 0.3 * min(oi_delta, 20.0)
     comp_sent = 0.3 * (sentiment_score * 10.0)
     compound_score = round((comp_vol + comp_oi + comp_sent) * 10, 1)
     
-    # Generate mock CoinGecko data
     mock_mcap = random.randint(50000000, 2000000000)
     mock_rank = random.randint(10, 350)
     
-    # Generate mock agent reasoning
     reasons_en = [
         "Strong volume expansion and ascending open interest confirm structural momentum. High probability of continuation.",
         "Breakout volume is exceptional, but open interest remains flat. Likely driven by short-term sentiment/hype.",
@@ -324,10 +403,8 @@ async def trigger_simulation():
     scanner.log(f"[SIMULATION] [SCORING] Asset: {symbol} | Vol Component: {comp_vol:.2f} | OI Component: {comp_oi:.2f} | Sentiment Component: {comp_sent:.2f} | Total Compound Score: {compound_score}/100")
     scanner.log(f"💥 [SIMULATION] ALERT MATCHED! {symbol} Compound Score is {compound_score}/100. Dispatched simulated webhook payload.", level=logging.WARNING)
     
-    # Dispatch in the background
     asyncio.create_task(scanner.dispatch_webhook(payload))
     
-    # Broadcast simulation alert info directly to websocket clients
     if active_ws_connections:
         alert_payload = json.dumps({"type": "ALERT", "data": payload})
         for connection in active_ws_connections:
@@ -337,6 +414,276 @@ async def trigger_simulation():
                 pass
                 
     return {"status": "SUCCESS", "message": "Simulation alert fired.", "data": payload}
+
+# OAuth configuration details
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
+
+@app.get("/api/auth/google/login")
+async def google_login(mock_role: Optional[str] = None):
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        role = mock_role if mock_role in ["admin", "premium", "black_diamond", "user"] else "user"
+        return RedirectResponse(url=f"/api/auth/google/callback?mock_role={role}")
+    
+    url = (
+        f"https://accounts.google.com/o/oauth2/v2/auth?"
+        f"response_type=code&"
+        f"client_id={GOOGLE_CLIENT_ID}&"
+        f"redirect_uri={REDIRECT_URI}&"
+        f"scope=openid%20email%20profile"
+    )
+    return RedirectResponse(url=url)
+
+@app.get("/api/auth/google/callback")
+async def google_callback(
+    response: Response,
+    code: Optional[str] = None,
+    mock_role: Optional[str] = None
+):
+    user_info = None
+    if mock_role or not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        role = mock_role if mock_role in ["admin", "premium", "black_diamond", "user"] else "user"
+        user_info = {
+            "email": f"{role}@mock.com",
+            "name": f"Mock {role.capitalize()}",
+            "picture": f"https://api.dicebear.com/7.x/bottts/svg?seed={role}"
+        }
+    else:
+        if not code:
+            raise HTTPException(status_code=400, detail="Missing authorization code")
+        
+        async with aiohttp.ClientSession() as session:
+            token_url = "https://oauth2.googleapis.com/token"
+            data = {
+                "code": code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": REDIRECT_URI,
+                "grant_type": "authorization_code"
+            }
+            async with session.post(token_url, data=data) as resp:
+                if resp.status != 200:
+                    err_text = await resp.text()
+                    logger.error(f"Failed to exchange Google OAuth code: {err_text}")
+                    raise HTTPException(status_code=400, detail="Google authentication failed")
+                token_data = await resp.json()
+                access_token = token_data.get("access_token")
+                
+            userinfo_url = f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={access_token}"
+            async with session.get(userinfo_url) as resp:
+                if resp.status != 200:
+                    raise HTTPException(status_code=400, detail="Failed to retrieve user info")
+                google_profile = await resp.json()
+                user_info = {
+                    "email": google_profile.get("email"),
+                    "name": google_profile.get("name", google_profile.get("email")),
+                    "picture": google_profile.get("picture", "https://api.dicebear.com/7.x/bottts/svg?seed=default")
+                }
+                
+    if not user_info or not user_info.get("email"):
+        raise HTTPException(status_code=400, detail="User email info unavailable")
+        
+    user = users_db.create_user(
+        email=user_info["email"],
+        name=user_info["name"],
+        picture=user_info["picture"],
+        role=mock_role if mock_role else "user"
+    )
+    
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
+    users_db.create_session(user["id"], token, expires_at)
+    
+    response = RedirectResponse(url="/")
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=604800,
+        secure=False
+    )
+    return response
+
+@app.post("/api/auth/signup")
+async def signup(payload: SignupModel):
+    existing = users_db.get_user_by_email_or_username(payload.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+        
+    user = users_db.register_user(payload.email, payload.name, payload.password)
+    logger.info(f"🔑 [SIGNUP] New user registration code for {payload.email}: {user.get('confirmation_code')}")
+    return {
+        "status": "SUCCESS", 
+        "message": "User registered. Confirmation required.", 
+        "dev_code": user.get("confirmation_code"), 
+        "email": payload.email
+    }
+
+@app.post("/api/auth/confirm-email")
+async def confirm_email(payload: ConfirmEmailModel):
+    success = users_db.confirm_email_code(payload.email, payload.code)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid confirmation code")
+    return {"status": "SUCCESS", "message": "Email confirmed successfully"}
+
+@app.post("/api/auth/login")
+async def login(payload: LoginModel, response: Response):
+    user = users_db.verify_user_credentials(payload.username, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email/username or password")
+        
+    if not user.get("email_confirmed"):
+        raise HTTPException(
+            status_code=403,
+            detail="EMAIL_CONFIRMATION_REQUIRED"
+        )
+        
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
+    users_db.create_session(user["id"], token, expires_at)
+    
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=604800,
+        secure=False
+    )
+    return {"status": "SUCCESS", "user": user}
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordModel):
+    token = users_db.generate_reset_token(payload.email)
+    if not token:
+        raise HTTPException(status_code=400, detail="User not found")
+    logger.info(f"🔑 [FORGOT PASSWORD] Reset code for {payload.email}: {token}")
+    return {"status": "SUCCESS", "message": "Password reset token sent", "dev_token": token}
+
+@app.post("/api/auth/reset-password")
+async def reset_password(payload: ResetPasswordModel):
+    success = users_db.reset_password_with_token(payload.email, payload.token, payload.password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid reset token or email")
+    return {"status": "SUCCESS", "message": "Password updated successfully"}
+
+@app.get("/api/admin/system-stats")
+async def get_system_stats(current_admin: dict = Depends(get_current_admin)):
+    with users_db.get_db_conn() as conn:
+        total_users = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()["count"]
+        active_sessions = conn.execute("SELECT COUNT(*) as count FROM sessions").fetchone()["count"]
+    
+    monitored_count = sum(len(v) for v in scanner.monitored_pairs.values())
+    alerts_count = len(scanner.logs_history)
+    
+    return {
+        "total_users": total_users,
+        "active_sessions": active_sessions,
+        "monitored_pairs": monitored_count,
+        "alerts_dispatched": alerts_count,
+        "scanner_status": "RUNNING" if scanner.is_running else "STOPPED"
+    }
+
+@app.post("/api/admin/users/{user_id}/confirm")
+async def admin_confirm_user(user_id: str, payload: ConfirmUpdateModel, current_admin: dict = Depends(get_current_admin)):
+    success = users_db.admin_confirm_user_email(user_id, payload.confirm)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to update verification status")
+    return {"status": "SUCCESS"}
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: str, payload: AdminPasswordResetModel, current_admin: dict = Depends(get_current_admin)):
+    success = users_db.admin_reset_user_password(user_id, payload.password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to reset password")
+    return {"status": "SUCCESS"}
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, current_admin: dict = Depends(get_current_admin)):
+    if user_id == current_admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own admin account")
+    success = users_db.delete_user(user_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to delete user")
+    return {"status": "SUCCESS"}
+
+@app.post("/api/auth/logout")
+async def logout(response: Response, session_token: Optional[str] = Depends(get_session_token)):
+    if session_token:
+        users_db.delete_session(session_token)
+    response = Response(content=json.dumps({"status": "SUCCESS"}), media_type="application/json")
+    response.delete_cookie("session_token")
+    return response
+
+@app.get("/api/auth/user")
+async def get_auth_user(current_user: dict = Depends(get_current_user)):
+    user_copy = dict(current_user)
+    user_copy.pop("password_hash", None)
+    user_copy.pop("password_salt", None)
+    user_copy["features"] = users_db.get_role_features(user_copy["role"])
+    return user_copy
+
+@app.get("/api/admin/features")
+async def get_admin_features(current_admin: dict = Depends(get_current_admin)):
+    all_features = users_db.get_all_role_features()
+    # Return as dict keyed by role name for easy client-side lookup
+    return {f["role"]: f for f in all_features}
+
+@app.post("/api/admin/features/{role}")
+async def update_admin_features(
+    role: str,
+    payload: FeatureUpdateModel,
+    current_admin: dict = Depends(get_current_admin)
+):
+    if role not in ["admin", "premium", "black_diamond", "user"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    success = users_db.update_role_features(
+        role=role,
+        webhook_enabled=payload.webhook_enabled,
+        deepseek_enabled=payload.deepseek_enabled,
+        calculator_enabled=payload.calculator_enabled,
+        ledger_enabled=payload.ledger_enabled
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to update features")
+    return {"status": "SUCCESS"}
+
+@app.get("/api/admin/users")
+async def get_admin_users(current_admin: dict = Depends(get_current_admin)):
+    return users_db.list_all_users()
+
+@app.post("/api/admin/users/{user_id}/role")
+async def update_user_role(user_id: str, payload: RoleUpdateModel, current_admin: dict = Depends(get_current_admin)):
+    success = users_db.update_user_role(user_id, payload.role)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid role or user not found")
+    return {"status": "SUCCESS"}
+
+@app.get("/api/user/trades")
+async def get_user_trades(current_user: dict = Depends(get_current_user)):
+    return users_db.get_user_trades(current_user["id"])
+
+@app.post("/api/user/trades")
+async def add_user_trade(trade: TradeCreateModel, current_user: dict = Depends(get_current_user)):
+    trade_id = users_db.add_trade(
+        user_id=current_user["id"],
+        ticker=trade.ticker,
+        trade_type=trade.type,
+        entry_price=trade.entry_price,
+        exit_price=trade.exit_price,
+        profit_pct=trade.profit_pct,
+        notes=trade.notes
+    )
+    return {"status": "SUCCESS", "trade_id": trade_id}
+
+@app.delete("/api/user/trades/{trade_id}")
+async def delete_user_trade(trade_id: int, current_user: dict = Depends(get_current_user)):
+    success = users_db.delete_trade(current_user["id"], trade_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Trade not found or not owned by user")
+    return {"status": "SUCCESS"}
 
 # Serve the static frontend dashboard
 frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))

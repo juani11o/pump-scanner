@@ -64,16 +64,845 @@ document.addEventListener('DOMContentLoaded', () => {
     const nodeAccum            = document.getElementById('node-accum');
     const conn0                = document.getElementById('conn-0');
 
+    // DOM Elements - Auth & Navigation Console
+    const navDashboard = document.getElementById('nav-dashboard');
+    const navAdmin = document.getElementById('nav-admin');
+    const navLedger = document.getElementById('nav-ledger');
+    const headerNav = document.getElementById('header-nav');
+    
+    const loginOverlay = document.getElementById('login-overlay');
+    const userProfileBadge = document.getElementById('user-profile-badge');
+    const userAvatar = document.getElementById('user-avatar');
+    const userName = document.getElementById('user-name');
+    const userRoleBadge = document.getElementById('user-role-badge');
+    const btnLogout = document.getElementById('btn-logout');
+    
+    const adminConsolePanel = document.getElementById('admin-console-panel');
+    const adminUsersTableBody = document.getElementById('admin-users-table-body');
+    const terminalGrid = document.querySelector('.terminal-grid');
+    
+    const ledgerLockedModal = document.getElementById('ledger-locked-modal');
+    const btnCloseLedgerModal = document.getElementById('btn-close-ledger-modal');
+    const btnCloseLedgerModalOk = document.getElementById('btn-close-ledger-modal-ok');
+
+    // Email/Password Auth Forms & Panels
+    const formLogin = document.getElementById('form-login');
+    const formSignup = document.getElementById('form-signup');
+    const formConfirm = document.getElementById('form-confirm');
+    const formForgot = document.getElementById('form-forgot');
+    const formReset = document.getElementById('form-reset');
+
+    const authPanelMain = document.getElementById('auth-panel-main');
+    const authPanelConfirm = document.getElementById('auth-panel-confirm');
+    const authPanelForgot = document.getElementById('auth-panel-forgot');
+    const authPanelReset = document.getElementById('auth-panel-reset');
+
+    const tabLogin = document.getElementById('tab-login');
+    const tabSignup = document.getElementById('tab-signup');
+
+    const linkForgotPassword = document.getElementById('link-forgot-password');
+    const linkForgotBack = document.getElementById('link-forgot-back');
+    const linkConfirmBack = document.getElementById('link-confirm-back');
+    const linkResetBack = document.getElementById('link-reset-back');
+
+    const inputLoginUsername = document.getElementById('login-username');
+    const inputLoginPassword = document.getElementById('login-password');
+    const inputSignupName = document.getElementById('signup-name');
+    const inputSignupEmail = document.getElementById('signup-email');
+    const inputSignupPassword = document.getElementById('signup-password');
+    const inputConfirmCode = document.getElementById('confirm-code');
+    const inputForgotEmail = document.getElementById('forgot-email');
+    const inputResetToken = document.getElementById('reset-token');
+    const inputResetPassword = document.getElementById('reset-password');
+
+    const devCodeToast = document.getElementById('dev-code-toast');
+    const devCodeText = document.getElementById('dev-code-text');
+
+    // Admin Console Sub-Tabs
+    const adminTabUsers = document.getElementById('admin-tab-users');
+    const adminTabStats = document.getElementById('admin-tab-stats');
+    const adminViewUsers = document.getElementById('admin-view-users');
+    const adminViewStats = document.getElementById('admin-view-stats');
+    const adminSubTitle = document.getElementById('admin-sub-title');
+
+    const statTotalUsers = document.getElementById('stat-total-users');
+    const statActiveSessions = document.getElementById('stat-active-sessions');
+    const statMonitoredPairs = document.getElementById('stat-monitored-pairs');
+    const statAlertsDispatched = document.getElementById('stat-alerts-dispatched');
+
     // State Variables
     let ws = null;
     let watchlistData = [];
     let wsReconnectInterval = 3000;
     let watchlistPollInterval = null;
+    let poolInterval = null; // Stale interval reference
     let accumPollInterval = null;
+    
+    let currentUser = null;
+    let isAuthInitialized = false;
+    let confirmEmailState = '';
+    let resetEmailState = '';
 
     // Sorting State
     let sortKey = 'symbol';
     let sortOrder = 'asc';
+    let compoundChartInstance = null;
+    const presets = {
+        stocks: { rate: 8.0, inflation: 3.0, frequency: 12 },
+        crypto: { rate: 25.0, inflation: 3.0, frequency: 365 },
+        realestate: { rate: 6.0, inflation: 3.0, frequency: 1 },
+        savings: { rate: 4.0, inflation: 3.0, frequency: 12 },
+        custom: { rate: 8.0, inflation: 3.0, frequency: 12 }
+    };
+
+    // -------------------------------------------------------------------------- //
+    // 0. AUTHENTICATION & ROLE-BASED ACCESS CONTROL                              //
+    // -------------------------------------------------------------------------- //
+
+    async function checkAuth() {
+        try {
+            const resp = await fetch(`${API_BASE}/api/auth/user`);
+            if (resp.status === 200) {
+                currentUser = await resp.json();
+                
+                // Populate profile badge
+                if (userName) userName.innerText = currentUser.name;
+                if (userAvatar) userAvatar.src = currentUser.picture || 'https://api.dicebear.com/7.x/bottts/svg?seed=default';
+                
+                if (userRoleBadge) {
+                    userRoleBadge.innerText = currentUser.role.replace('_', ' ').toUpperCase();
+                    userRoleBadge.className = `badge badge-${currentUser.role}`;
+                }
+                
+                // Show navigation & badge
+                if (headerNav) headerNav.style.display = 'flex';
+                if (userProfileBadge) userProfileBadge.style.display = 'flex';
+                if (loginOverlay) loginOverlay.style.display = 'none';
+                
+                // Apply RBAC UI Gates
+                applyRoleGates();
+                
+                // Initialize background data feeds
+                initSystem();
+            } else {
+                handleUnauthorized();
+            }
+        } catch (e) {
+            console.error("Auth check failed:", e);
+            handleUnauthorized();
+        }
+    }
+
+    function handleUnauthorized() {
+        currentUser = null;
+        if (headerNav) headerNav.style.display = 'none';
+        if (userProfileBadge) userProfileBadge.style.display = 'none';
+        if (loginOverlay) loginOverlay.style.display = 'flex';
+        
+        // Reset sub auth view to main panel
+        showAuthView('main');
+        hideDevCode();
+        
+        // Stop polling and socket
+        if (watchlistPollInterval) clearInterval(watchlistPollInterval);
+        if (accumPollInterval) clearInterval(accumPollInterval);
+        if (ws) {
+            ws.onclose = null; // Prevent reconnect loops
+            ws.close();
+        }
+    }
+
+    function showAuthView(viewName) {
+        if (!authPanelMain || !authPanelConfirm || !authPanelForgot || !authPanelReset) return;
+        authPanelMain.style.display = 'none';
+        authPanelConfirm.style.display = 'none';
+        authPanelForgot.style.display = 'none';
+        authPanelReset.style.display = 'none';
+        
+        if (viewName === 'main') {
+            authPanelMain.style.display = 'block';
+        } else if (viewName === 'confirm') {
+            authPanelConfirm.style.display = 'block';
+        } else if (viewName === 'forgot') {
+            authPanelForgot.style.display = 'block';
+        } else if (viewName === 'reset') {
+            authPanelReset.style.display = 'block';
+        }
+    }
+
+    function showDevCode(type, code) {
+        if (devCodeToast && devCodeText) {
+            devCodeText.innerHTML = `${type.toUpperCase()} CODE: <strong style="color:var(--yellow); font-size:14px; letter-spacing:1px;">${code}</strong>`;
+            devCodeToast.style.display = 'flex';
+        }
+    }
+    
+    function hideDevCode() {
+        if (devCodeToast) devCodeToast.style.display = 'none';
+    }
+
+    // Bind login/signup tabs
+    if (tabLogin) {
+        tabLogin.addEventListener('click', () => {
+            tabLogin.classList.add('active');
+            if (tabSignup) tabSignup.classList.remove('active');
+            if (formLogin) formLogin.style.display = 'block';
+            if (formSignup) formSignup.style.display = 'none';
+        });
+    }
+    
+    if (tabSignup) {
+        tabSignup.addEventListener('click', () => {
+            tabSignup.classList.add('active');
+            if (tabLogin) tabLogin.classList.remove('active');
+            if (formSignup) formSignup.style.display = 'block';
+            if (formLogin) formLogin.style.display = 'none';
+        });
+    }
+
+    // Forgot password view switch
+    if (linkForgotPassword) {
+        linkForgotPassword.addEventListener('click', (e) => {
+            e.preventDefault();
+            showAuthView('forgot');
+        });
+    }
+
+    const backToLogin = (e) => {
+        e.preventDefault();
+        hideDevCode();
+        showAuthView('main');
+    };
+
+    if (linkForgotBack) linkForgotBack.addEventListener('click', backToLogin);
+    if (linkConfirmBack) linkConfirmBack.addEventListener('click', backToLogin);
+    if (linkResetBack) linkResetBack.addEventListener('click', backToLogin);
+
+    // Password visibility toggle logic
+    const togglePasswordButtons = document.querySelectorAll('.btn-toggle-password');
+    togglePasswordButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const input = btn.previousElementSibling;
+            if (input && (input.type === 'password' || input.type === 'text')) {
+                const isPassword = input.type === 'password';
+                input.type = isPassword ? 'text' : 'password';
+                btn.innerHTML = isPassword 
+                    ? '<i class="fa-solid fa-eye-slash"></i>' 
+                    : '<i class="fa-solid fa-eye"></i>';
+            }
+        });
+    });
+
+    // Form Submits: Login
+    if (formLogin) {
+        formLogin.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = inputLoginUsername.value.trim();
+            const password = inputLoginPassword.value;
+            
+            try {
+                const resp = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                if (resp.ok) {
+                    window.location.reload();
+                } else if (resp.status === 403) {
+                    // Email confirmation needed
+                    const data = await resp.json();
+                    confirmEmailState = data.email || username;
+                    alert("Email verification required before accessing terminal.");
+                    showAuthView('confirm');
+                } else {
+                    const err = await resp.json();
+                    alert(err.detail || "Authentication failed.");
+                }
+            } catch (err) {
+                alert("Connection failed: " + err.message);
+            }
+        });
+    }
+
+    // Form Submits: Signup
+    if (formSignup) {
+        formSignup.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = inputSignupName.value.trim();
+            const email = inputSignupEmail.value.trim();
+            const password = inputSignupPassword.value;
+            
+            try {
+                const resp = await fetch(`${API_BASE}/api/auth/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, name, password })
+                });
+                
+                if (resp.ok) {
+                    const data = await resp.json();
+                    confirmEmailState = data.email;
+                    showAuthView('confirm');
+                    if (data.dev_code) {
+                        showDevCode("Verification", data.dev_code);
+                    }
+                } else {
+                    const err = await resp.json();
+                    alert(err.detail || "Registration failed.");
+                }
+            } catch (err) {
+                alert("Connection failed: " + err.message);
+            }
+        });
+    }
+
+    // Form Submits: Confirm Email Code
+    if (formConfirm) {
+        formConfirm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const code = inputConfirmCode.value.trim();
+            
+            try {
+                const resp = await fetch(`${API_BASE}/api/auth/confirm-email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: confirmEmailState, code })
+                });
+                
+                if (resp.ok) {
+                    alert("Email verified successfully! You can now log in.");
+                    hideDevCode();
+                    showAuthView('main');
+                    if (tabLogin) tabLogin.click();
+                } else {
+                    const err = await resp.json();
+                    alert(err.detail || "Invalid confirmation code.");
+                }
+            } catch (err) {
+                alert("Connection failed: " + err.message);
+            }
+        });
+    }
+
+    // Form Submits: Forgot Password (request token)
+    if (formForgot) {
+        formForgot.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = inputForgotEmail.value.trim();
+            resetEmailState = email;
+            
+            try {
+                const resp = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                
+                if (resp.ok) {
+                    const data = await resp.json();
+                    showAuthView('reset');
+                    if (data.dev_token) {
+                        showDevCode("Reset Code", data.dev_token);
+                    }
+                } else {
+                    const err = await resp.json();
+                    alert(err.detail || "Failed to trigger reset.");
+                }
+            } catch (err) {
+                alert("Connection failed: " + err.message);
+            }
+        });
+    }
+
+    // Form Submits: Reset Password
+    if (formReset) {
+        formReset.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const token = inputResetToken.value.trim();
+            const password = inputResetPassword.value;
+            
+            try {
+                const resp = await fetch(`${API_BASE}/api/auth/reset-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: resetEmailState, token, password })
+                });
+                
+                if (resp.ok) {
+                    alert("Password updated successfully! Log in with your new credentials.");
+                    hideDevCode();
+                    showAuthView('main');
+                    if (tabLogin) tabLogin.click();
+                } else {
+                    const err = await resp.json();
+                    alert(err.detail || "Failed to reset password.");
+                }
+            } catch (err) {
+                alert("Connection failed: " + err.message);
+            }
+        });
+    }
+
+    function applyRoleGates() {
+        if (!currentUser) return;
+        
+        const isAdmin = currentUser.role === 'admin';
+        const features = currentUser.features || {
+            webhook_enabled: 0,
+            deepseek_enabled: 0,
+            calculator_enabled: 1,
+            ledger_enabled: 0
+        };
+        
+        // Admin Console tab visibility
+        if (navAdmin) {
+            navAdmin.style.display = isAdmin ? 'inline-block' : 'none';
+        }
+        
+        // Disable/enable admin controls
+        const adminElements = [
+            btnStartScanner,
+            btnStopScanner,
+            btnTriggerSimulation,
+            btnTriggerAccumSim,
+            btnSaveSettings
+        ];
+        
+        adminElements.forEach(btn => {
+            if (btn) {
+                if (isAdmin) {
+                    btn.removeAttribute('disabled');
+                    btn.classList.remove('disabled');
+                } else {
+                    btn.setAttribute('disabled', 'true');
+                    btn.classList.add('disabled');
+                    btn.title = "ADMIN PRIVILEGE REQUIRED";
+                }
+            }
+        });
+        
+        // Webhook inputs gating
+        const hasWebhooks = !!features.webhook_enabled;
+        if (inputWebhookUrl) {
+            if (hasWebhooks) {
+                inputWebhookUrl.removeAttribute('disabled');
+                inputWebhookUrl.placeholder = "Enter webhook url...";
+                inputWebhookUrl.title = "";
+                inputWebhookUrl.parentElement.classList.remove('gated-feature-lock');
+            } else {
+                inputWebhookUrl.setAttribute('disabled', 'true');
+                inputWebhookUrl.value = "";
+                inputWebhookUrl.placeholder = "🔒 LOCKED (UPGRADE REQUIRED)";
+                inputWebhookUrl.title = "WEBHOOK DISPATCH IS GATED FOR PREMIUM ROLES";
+            }
+        }
+
+        // DeepSeek inputs gating
+        const hasDeepSeek = !!features.deepseek_enabled;
+        if (inputDeepseekKey) {
+            if (hasDeepSeek) {
+                inputDeepseekKey.removeAttribute('disabled');
+                inputDeepseekKey.placeholder = "Enter DeepSeek api key...";
+                inputDeepseekKey.title = "";
+            } else {
+                inputDeepseekKey.setAttribute('disabled', 'true');
+                inputDeepseekKey.value = "";
+                inputDeepseekKey.placeholder = "🔒 LOCKED (UPGRADE REQUIRED)";
+                inputDeepseekKey.title = "DEEPSEEK AI ANALYSIS GATED FOR PREMIUM ROLES";
+            }
+        }
+
+        // Calculator tab visibility
+        const hasCalculator = !!features.calculator_enabled;
+        const navCompound = document.getElementById('nav-compound');
+        if (navCompound) {
+            navCompound.style.display = hasCalculator ? 'inline-block' : 'none';
+        }
+
+        // Ledger tab visibility / labeling
+        const hasLedger = !!features.ledger_enabled;
+        if (navLedger) {
+            const span = navLedger.querySelector('span');
+            if (span) {
+                if (hasLedger) {
+                    span.innerText = currentLang === 'en' ? 'MY_TRADES' : 'MIS_OPERACIONES';
+                } else {
+                    span.innerText = currentLang === 'en' ? 'MY_TRADES (🔒)' : 'MIS_OPERACIONES (🔒)';
+                }
+            }
+        }
+    }
+
+    function initSystem() {
+        if (isAuthInitialized) return;
+        isAuthInitialized = true;
+        
+        // Launch WebSocket link
+        connectWebSocket();
+
+        // Start polling watchlist summary every 5 seconds
+        pollWatchlist();
+        watchlistPollInterval = setInterval(pollWatchlist, 5000);
+
+        // Start polling accumulation candidates every 10 seconds
+        pollAccumulationCandidates();
+        accumPollInterval = setInterval(pollAccumulationCandidates, 10000);
+    }
+
+    // Logout operation
+    if (btnLogout) {
+        btnLogout.addEventListener('click', async () => {
+            try {
+                const resp = await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
+                if (resp.ok) {
+                    window.location.reload();
+                }
+            } catch (e) {
+                console.error("Logout failed:", e);
+            }
+        });
+    }
+
+    // View Navigation Router
+    const compoundInterestPanel = document.getElementById('compound-interest-panel');
+    const navCompound = document.getElementById('nav-compound');
+
+    if (navDashboard) {
+        navDashboard.addEventListener('click', () => {
+            navDashboard.classList.add('active');
+            if (navAdmin) navAdmin.classList.remove('active');
+            if (navCompound) navCompound.classList.remove('active');
+            if (navLedger) navLedger.classList.remove('active');
+            if (terminalGrid) terminalGrid.style.display = 'grid';
+            if (adminConsolePanel) adminConsolePanel.style.display = 'none';
+            if (compoundInterestPanel) compoundInterestPanel.style.display = 'none';
+        });
+    }
+
+    if (navAdmin) {
+        navAdmin.addEventListener('click', () => {
+            if (currentUser && currentUser.role === 'admin') {
+                navAdmin.classList.add('active');
+                if (navDashboard) navDashboard.classList.remove('active');
+                if (navCompound) navCompound.classList.remove('active');
+                if (navLedger) navLedger.classList.remove('active');
+                if (terminalGrid) terminalGrid.style.display = 'none';
+                if (adminConsolePanel) adminConsolePanel.style.display = 'block';
+                if (compoundInterestPanel) compoundInterestPanel.style.display = 'none';
+                
+                // Reset admin sub-tabs to users view
+                if (adminTabUsers) adminTabUsers.classList.add('active');
+                if (adminTabStats) adminTabStats.classList.remove('active');
+                const adminTabFeatures = document.getElementById('admin-tab-features');
+                if (adminTabFeatures) adminTabFeatures.classList.remove('active');
+
+                if (adminViewUsers) adminViewUsers.style.display = 'block';
+                if (adminViewStats) adminViewStats.style.display = 'none';
+                const adminViewFeatures = document.getElementById('admin-view-features');
+                if (adminViewFeatures) adminViewFeatures.style.display = 'none';
+
+                if (adminSubTitle) adminSubTitle.textContent = 'USER_ROLES';
+                
+                loadAdminUsers();
+            }
+        });
+    }
+
+    if (navCompound) {
+        navCompound.addEventListener('click', () => {
+            const hasCalc = currentUser && currentUser.features && currentUser.features.calculator_enabled;
+            if (!hasCalc) return;
+
+            navCompound.classList.add('active');
+            if (navDashboard) navDashboard.classList.remove('active');
+            if (navAdmin) navAdmin.classList.remove('active');
+            if (navLedger) navLedger.classList.remove('active');
+            if (terminalGrid) terminalGrid.style.display = 'none';
+            if (adminConsolePanel) adminConsolePanel.style.display = 'none';
+            if (compoundInterestPanel) compoundInterestPanel.style.display = 'grid';
+
+            initCompoundCalculator();
+        });
+    }
+
+    if (navLedger) {
+        navLedger.addEventListener('click', () => {
+            const hasLedger = currentUser && currentUser.features && currentUser.features.ledger_enabled;
+            if (!hasLedger) {
+                if (ledgerLockedModal) ledgerLockedModal.style.display = 'flex';
+            } else {
+                alert(currentLang === 'en' 
+                    ? "Trades ledger backend initialized. Interface is prepared for later integration." 
+                    : "Registro de operaciones inicializado. Interfaz preparada para futura integración.");
+            }
+        });
+    }
+
+    if (btnCloseLedgerModal) {
+        btnCloseLedgerModal.addEventListener('click', () => {
+            if (ledgerLockedModal) ledgerLockedModal.style.display = 'none';
+        });
+    }
+    if (btnCloseLedgerModalOk) {
+        btnCloseLedgerModalOk.addEventListener('click', () => {
+            if (ledgerLockedModal) ledgerLockedModal.style.display = 'none';
+        });
+    }
+
+    // Bind Admin sub-tabs
+    const adminTabFeatures = document.getElementById('admin-tab-features');
+    const adminViewFeatures = document.getElementById('admin-view-features');
+
+    if (adminTabUsers) {
+        adminTabUsers.addEventListener('click', () => {
+            adminTabUsers.classList.add('active');
+            if (adminTabStats) adminTabStats.classList.remove('active');
+            if (adminTabFeatures) adminTabFeatures.classList.remove('active');
+            if (adminViewUsers) adminViewUsers.style.display = 'block';
+            if (adminViewStats) adminViewStats.style.display = 'none';
+            if (adminViewFeatures) adminViewFeatures.style.display = 'none';
+            if (adminSubTitle) adminSubTitle.textContent = 'USER_ROLES';
+            loadAdminUsers();
+        });
+    }
+    
+    if (adminTabStats) {
+        adminTabStats.addEventListener('click', () => {
+            adminTabStats.classList.add('active');
+            if (adminTabUsers) adminTabUsers.classList.remove('active');
+            if (adminTabFeatures) adminTabFeatures.classList.remove('active');
+            if (adminViewUsers) adminViewUsers.style.display = 'none';
+            if (adminViewStats) adminViewStats.style.display = 'block';
+            if (adminViewFeatures) adminViewFeatures.style.display = 'none';
+            if (adminSubTitle) adminSubTitle.textContent = 'SYSTEM_DIAGNOSTICS';
+            loadAdminStats();
+        });
+    }
+
+    if (adminTabFeatures) {
+        adminTabFeatures.addEventListener('click', () => {
+            adminTabFeatures.classList.add('active');
+            if (adminTabUsers) adminTabUsers.classList.remove('active');
+            if (adminTabStats) adminTabStats.classList.remove('active');
+            if (adminViewUsers) adminViewUsers.style.display = 'none';
+            if (adminViewStats) adminViewStats.style.display = 'none';
+            if (adminViewFeatures) adminViewFeatures.style.display = 'block';
+            if (adminSubTitle) adminSubTitle.textContent = 'ROLE_FEATURE_FLAGS';
+            loadAdminFeatures();
+        });
+    }
+
+    // Load Admin Panel Users Database
+    async function loadAdminUsers() {
+        if (!adminUsersTableBody) return;
+        
+        adminUsersTableBody.innerHTML = `
+            <tr>
+                <td colspan="5" class="table-placeholder">Loading users database...</td>
+            </tr>`;
+            
+        try {
+            const resp = await fetch(`${API_BASE}/api/admin/users`);
+            if (resp.ok) {
+                const users = await resp.json();
+                
+                if (users.length === 0) {
+                    adminUsersTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="table-placeholder">No registered users in database.</td>
+                        </tr>`;
+                    return;
+                }
+                
+                adminUsersTableBody.innerHTML = '';
+                users.forEach(user => {
+                    const row = document.createElement('tr');
+                    
+                    const isSelf = user.email === currentUser.email || user.id === currentUser.id;
+                    const roles = ['admin', 'black_diamond', 'premium', 'user'];
+                    const optionsHTML = roles.map(r => `
+                        <option value="${r}" ${user.role === r ? 'selected' : ''} ${isSelf && r !== 'admin' ? 'disabled' : ''}>
+                            ${r.replace('_', ' ').toUpperCase()}
+                        </option>
+                    `).join('');
+                    
+                    const isConfirmed = user.email_confirmed === 1;
+                    const verifiedBadgeHTML = isConfirmed
+                        ? '<span class="badge badge-watching" style="font-size: 8px; padding: 1px 4px; margin-left: 5px;">VERIFIED</span>'
+                        : '<span class="badge badge-coiling" style="font-size: 8px; padding: 1px 4px; margin-left: 5px;">UNVERIFIED</span>';
+                        
+                    const date = new Date(user.created_at || Date.now());
+                    const dateFormatted = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    
+                    row.innerHTML = `
+                        <td>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <img src="${user.picture || 'https://api.dicebear.com/7.x/bottts/svg?seed=default'}" style="width:20px; height:20px; border-radius:50%; background:#fff; border:1px solid var(--border-color);">
+                                <strong>${user.name}</strong> ${isSelf ? '<span class="text-dim">(YOU)</span>' : ''}
+                            </div>
+                        </td>
+                        <td>
+                            <div>
+                                <span>${user.email}</span>
+                                <div><small style="color:var(--text-dim); font-size:10px; font-family:monospace;">ID: ${user.id}</small>${verifiedBadgeHTML}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                <span class="badge badge-${user.role}" style="font-size: 9px; padding: 2px 6px; width: fit-content;">${user.role.replace('_', ' ').toUpperCase()}</span>
+                                <select class="admin-role-select" data-user-id="${user.id}" ${isSelf ? 'disabled' : ''} style="margin-top:2px;">
+                                    ${optionsHTML}
+                                </select>
+                            </div>
+                        </td>
+                        <td>${dateFormatted}</td>
+                        <td>
+                            <div style="display:flex; gap:5px;">
+                                <button class="btn btn-xs ${isConfirmed ? 'btn-outline-red' : 'btn-outline-green'} btn-toggle-verify" data-user-id="${user.id}" data-confirmed="${user.email_confirmed}">
+                                    ${isConfirmed ? 'UNVERIFY' : 'VERIFY'}
+                                </button>
+                                <button class="btn btn-xs btn-outline-blue btn-admin-reset-pw" data-user-id="${user.id}">
+                                    RESET PW
+                                </button>
+                                <button class="btn btn-xs btn-outline-red btn-admin-delete" data-user-id="${user.id}" ${isSelf ? 'disabled' : ''}>
+                                    DELETE
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    
+                    // Bind change listener for role update
+                    const select = row.querySelector('.admin-role-select');
+                    if (select) {
+                        select.addEventListener('change', async (e) => {
+                            const newRole = e.target.value;
+                            await updateUserRole(user.id, newRole);
+                        });
+                    }
+
+                    // Bind verification toggle
+                    const verifyBtn = row.querySelector('.btn-toggle-verify');
+                    if (verifyBtn) {
+                        verifyBtn.addEventListener('click', async () => {
+                            const currentVal = parseInt(verifyBtn.dataset.confirmed) === 1;
+                            const newVal = !currentVal;
+                            try {
+                                const actionText = newVal ? "confirm" : "unconfirm";
+                                const confirmResp = await fetch(`${API_BASE}/api/admin/users/${user.id}/confirm`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ confirm: newVal })
+                                });
+                                if (confirmResp.ok) {
+                                    appendConsoleLine(`[SYSTEM] Manual verification updated for ${user.email} (${actionText.toUpperCase()}).`, 'line-success');
+                                    loadAdminUsers();
+                                } else {
+                                    appendConsoleLine(`[SYSTEM] Failed to toggle verification status for ${user.email}.`, 'line-error');
+                                }
+                            } catch (err) {
+                                appendConsoleLine(`[SYSTEM] Manual verification update error: ${err.message}`, 'line-error');
+                            }
+                        });
+                    }
+
+                    // Bind reset password
+                    const resetBtn = row.querySelector('.btn-admin-reset-pw');
+                    if (resetBtn) {
+                        resetBtn.addEventListener('click', async () => {
+                            const newPw = prompt(`Enter new password for ${user.name} (${user.email}):`);
+                            if (newPw === null) return; // Cancelled
+                            if (newPw.trim() === '') {
+                                alert("Password cannot be empty!");
+                                return;
+                            }
+                            try {
+                                const resetResp = await fetch(`${API_BASE}/api/admin/users/${user.id}/reset-password`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ password: newPw })
+                                });
+                                if (resetResp.ok) {
+                                    appendConsoleLine(`[SYSTEM] Password reset for user ${user.email} successful.`, 'line-success');
+                                    alert(`Password reset successful for ${user.email}`);
+                                } else {
+                                    const errJson = await resetResp.json();
+                                    appendConsoleLine(`[SYSTEM] Password reset failed for ${user.email}: ${errJson.detail}`, 'line-error');
+                                }
+                            } catch (err) {
+                                appendConsoleLine(`[SYSTEM] Admin password reset error: ${err.message}`, 'line-error');
+                            }
+                        });
+                    }
+
+                    // Bind delete user
+                    const deleteBtn = row.querySelector('.btn-admin-delete');
+                    if (deleteBtn) {
+                        deleteBtn.addEventListener('click', async () => {
+                            if (!confirm(`Are you sure you want to permanently delete user ${user.name} (${user.email})? This action is irreversible.`)) {
+                                return;
+                            }
+                            try {
+                                const delResp = await fetch(`${API_BASE}/api/admin/users/${user.id}`, {
+                                    method: 'DELETE'
+                                });
+                                if (delResp.ok) {
+                                    appendConsoleLine(`[SYSTEM] User ${user.email} deleted successfully.`, 'line-warn');
+                                    loadAdminUsers();
+                                } else {
+                                    appendConsoleLine(`[SYSTEM] Failed to delete user ${user.email}.`, 'line-error');
+                                }
+                            } catch (err) {
+                                appendConsoleLine(`[SYSTEM] Delete user error: ${err.message}`, 'line-error');
+                            }
+                        });
+                    }
+                    
+                    adminUsersTableBody.appendChild(row);
+                });
+            }
+        } catch (e) {
+            console.error("Failed to load admin users:", e);
+            adminUsersTableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="table-placeholder text-red">Error loading users.</td>
+                </tr>`;
+        }
+    }
+
+    async function updateUserRole(userId, newRole) {
+        try {
+            const resp = await fetch(`${API_BASE}/api/admin/users/${userId}/role`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: newRole })
+            });
+            
+            if (resp.ok) {
+                appendConsoleLine(`[SYSTEM] Role for user ID ${userId} updated to ${newRole.toUpperCase()} successfully.`, 'line-success');
+                loadAdminUsers();
+            } else {
+                appendConsoleLine(`[SYSTEM] Failed to update role for user ID ${userId}.`, 'line-error');
+            }
+        } catch (e) {
+            appendConsoleLine(`[SYSTEM] Error updating user role: ${e.message}`, 'line-error');
+        }
+    }
+
+    async function loadAdminStats() {
+        try {
+            const resp = await fetch(`${API_BASE}/api/admin/system-stats`);
+            if (resp.ok) {
+                const stats = await resp.json();
+                if (statTotalUsers) statTotalUsers.textContent = stats.total_users;
+                if (statActiveSessions) statActiveSessions.textContent = stats.active_sessions;
+                if (statMonitoredPairs) statMonitoredPairs.textContent = stats.monitored_pairs;
+                if (statAlertsDispatched) statAlertsDispatched.textContent = stats.alerts_dispatched;
+            }
+        } catch (e) {
+            console.error("Failed to load admin stats:", e);
+        }
+    }
 
     // Theme Management
     function initTheme() {
@@ -153,6 +982,44 @@ document.addEventListener('DOMContentLoaded', () => {
             FIRE_ACCUM_SIM: "SIMULATE ACCUM",
             ACCUM_EMPTY: "No accumulation patterns detected yet.",
             ACCUM_EMPTY_SUB: "Stage 0 radar scanning on each cycle...",
+            ADMIN_CONSOLE: "ADMIN CONSOLE",
+
+            // Compound calculator strings
+            COMPOUND_INTEREST: "COMPOUND INTEREST",
+            INVESTMENT_SETTINGS: "INVESTMENT SETTINGS",
+            ASSET_CLASS: "ASSET CLASS",
+            STOCKS: "STOCKS",
+            CRYPTO: "CRYPTO",
+            REAL_ESTATE: "REAL ESTATE",
+            SAVINGS: "SAVINGS",
+            CUSTOM: "CUSTOM",
+            INITIAL_PRINCIPAL: "INITIAL PRINCIPAL",
+            MONTHLY_CONTRIBUTION: "MONTHLY CONTRIBUTION",
+            ANNUAL_RETURN: "ANNUAL RETURN",
+            INFLATION_RATE: "INFLATION RATE",
+            COMPOUND_FREQUENCY: "COMPOUND FREQUENCY",
+            ANNUALLY: "ANNUALLY",
+            QUARTERLY: "QUARTERLY",
+            MONTHLY_FREQ: "MONTHLY",
+            WEEKLY: "WEEKLY",
+            DAILY: "DAILY",
+            TIME_HORIZON: "TIME HORIZON",
+            YEARS: "YEARS",
+            CALCULATE_GROWTH: "CALCULATE GROWTH",
+            GROWTH_PROJECTIONS: "GROWTH PROJECTIONS",
+            TOTAL_BALANCE: "TOTAL BALANCE",
+            TOTAL_INTEREST: "TOTAL INTEREST",
+            REAL_VALUE_ADJ: "REAL VALUE (ADJ. INFLATION)",
+            INSPECT_YEAR_PROJECTION: "INSPECT YEAR PROJECTION",
+            PRINCIPAL: "PRINCIPAL",
+            CONTRIBUTIONS: "CONTRIBUTIONS",
+            INTEREST_GAINS: "INTEREST / GAINS",
+            TOTAL_BALANCE_ABBR: "TOTAL BAL",
+            REAL_VALUE_ABBR: "REAL VAL",
+            YEAR_BY_YEAR_BREAKDOWN: "YEAR-BY-YEAR BREAKDOWN",
+            YEAR: "YEAR",
+            INTEREST: "INTEREST",
+            REAL_VALUE: "REAL VALUE",
             
             // Tooltips
             TOOLTIP_WEBHOOK_URL: "Target URL to dispatch JSON alerts when a pump score matches or exceeds the threshold.",
@@ -162,7 +1029,13 @@ document.addEventListener('DOMContentLoaded', () => {
             TOOLTIP_INTERVAL: "Refresh cooldown period between active scanning cycles.",
             TOOLTIP_MAX_PAIRS: "Limit discoverable pairs sorted by 24h volume to focus processing bandwidth.",
             TOOLTIP_VOL_MULT: "How many times the current 5m candle volume must exceed the average volume of the previous 49 candles.",
-            TOOLTIP_PRICE_VEL: "The minimum price gain percentage over the last 2 periods (10 minutes) to trigger breakout status."
+            TOOLTIP_PRICE_VEL: "The minimum price gain percentage over the last 2 periods (10 minutes) to trigger breakout status.",
+            TOOLTIP_PRINCIPAL: "The starting amount of your investment.",
+            TOOLTIP_CONTRIBUTION: "The regular amount you add to the investment every month.",
+            TOOLTIP_RETURN: "The expected average annual rate of return on your investment.",
+            TOOLTIP_INFLATION: "The expected rate of price increases over time. Decreases purchasing power.",
+            TOOLTIP_FREQUENCY: "How often interest is calculated and added to your balance.",
+            TOOLTIP_HORIZON: "The total number of years you plan to keep your money invested."
         },
         es: {
             SYSTEM_STATUS: "ESTADO_SISTEMA",
@@ -207,6 +1080,44 @@ document.addEventListener('DOMContentLoaded', () => {
             FIRE_ACCUM_SIM: "SIMULAR ACUM",
             ACCUM_EMPTY: "No se detectaron patrones de acumulación.",
             ACCUM_EMPTY_SUB: "Radar Etapa 0 activo en cada ciclo...",
+            ADMIN_CONSOLE: "CONSOLA DE ADMIN",
+
+            // Compound calculator strings
+            COMPOUND_INTEREST: "INTERÉS COMPUESTO",
+            INVESTMENT_SETTINGS: "CONFIGURACIÓN DE INVERSIÓN",
+            ASSET_CLASS: "CLASE DE ACTIVO",
+            STOCKS: "ACCIONES",
+            CRYPTO: "CRIPTO",
+            REAL_ESTATE: "BIENES RAÍCES",
+            SAVINGS: "AHORROS",
+            CUSTOM: "PERSONALIZADO",
+            INITIAL_PRINCIPAL: "PRINCIPAL INICIAL",
+            MONTHLY_CONTRIBUTION: "CONTRIBUCIÓN MENSUAL",
+            ANNUAL_RETURN: "RETORNO ANUAL",
+            INFLATION_RATE: "TASA DE INFLACIÓN",
+            COMPOUND_FREQUENCY: "FRECUENCIA DE COMPOSICIÓN",
+            ANNUALLY: "ANUALMENTE",
+            QUARTERLY: "TRIMESTRALMENTE",
+            MONTHLY_FREQ: "MENSUALMENTE",
+            WEEKLY: "SEMANALMENTE",
+            DAILY: "DIARIAMENTE",
+            TIME_HORIZON: "HORIZONTE DE TIEMPO",
+            YEARS: "AÑOS",
+            CALCULATE_GROWTH: "CALCULAR CRECIMIENTO",
+            GROWTH_PROJECTIONS: "PROYECCIONES DE CRECIMIENTO",
+            TOTAL_BALANCE: "SALDO TOTAL",
+            TOTAL_INTEREST: "INTERÉS TOTAL",
+            REAL_VALUE_ADJ: "VALOR REAL (AJUSTADO POR INFLACIÓN)",
+            INSPECT_YEAR_PROJECTION: "INSPECCIONAR PROYECCIÓN DE AÑO",
+            PRINCIPAL: "CAPITAL",
+            CONTRIBUTIONS: "CONTRIBUCIONES",
+            INTEREST_GAINS: "INTERESES / GANANCIAS",
+            TOTAL_BALANCE_ABBR: "BAL TOTAL",
+            REAL_VALUE_ABBR: "VAL REAL",
+            YEAR_BY_YEAR_BREAKDOWN: "DESGLOSE AÑO POR AÑO",
+            YEAR: "AÑO",
+            INTEREST: "INTERÉS",
+            REAL_VALUE: "VALOR REAL",
             
             // Tooltips
             TOOLTIP_WEBHOOK_URL: "URL del servidor de destino para recibir cargas útiles de alertas JSON en tiempo real cuando se alcancen los umbrales de bombeo.",
@@ -216,7 +1127,13 @@ document.addEventListener('DOMContentLoaded', () => {
             TOOLTIP_INTERVAL: "Segundos de espera entre ciclos de escaneo consecutivos. Los valores más bajos escanean más rápido pero aumentan el riesgo de límite de velocidad.",
             TOOLTIP_MAX_PAIRS: "Limite el número de pares de mayor volumen obtenidos de la fase de descubrimiento para concentrar el ancho de banda de escaneo.",
             TOOLTIP_VOL_MULT: "Factor de umbral para activar rupturas. El volumen actual de la vela de 5m debe superar el promedio de las últimas 49 velas por este multiplicador.",
-            TOOLTIP_PRICE_VEL: "Ganancia porcentual mínima de precio en las últimas dos velas (10 minutos en total) para activar una ruptura técnica."
+            TOOLTIP_PRICE_VEL: "Ganancia porcentual mínima de precio en las últimas dos velas (10 minutos en total) para activar una ruptura técnica.",
+            TOOLTIP_PRINCIPAL: "El capital inicial de su inversión.",
+            TOOLTIP_CONTRIBUTION: "La cantidad regular que agrega a la inversión cada mes.",
+            TOOLTIP_RETURN: "La tasa de rendimiento anual promedio esperada para su inversión.",
+            TOOLTIP_INFLATION: "La tasa de aumento de precios esperada. Disminuye el poder adquisitivo.",
+            TOOLTIP_FREQUENCY: "Con qué frecuencia se calculan y se agregan los intereses a su saldo.",
+            TOOLTIP_HORIZON: "El número total de años que planea mantener su dinero invertido."
         }
     };
 
@@ -1089,6 +2006,413 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------------------- //
+    // 7A. CMDB ROLE FEATURES LOADER & UPDATER                                    //
+    // -------------------------------------------------------------------------- //
+
+    async function loadAdminFeatures() {
+        const tbody = document.getElementById('admin-features-table-body');
+        if (!tbody) return;
+
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="table-placeholder">Loading features configuration...</td>
+            </tr>`;
+
+        try {
+            const resp = await fetch(`${API_BASE}/api/admin/features`);
+            if (resp.ok) {
+                const features = await resp.json();
+                tbody.innerHTML = '';
+                
+                const roleOrder = ['admin', 'black_diamond', 'premium', 'user'];
+                roleOrder.forEach(roleName => {
+                    const data = features[roleName];
+                    if (!data) return;
+
+                    const row = document.createElement('tr');
+                    
+                    const isWebhookChecked = data.webhook_enabled ? 'checked' : '';
+                    const isDeepseekChecked = data.deepseek_enabled ? 'checked' : '';
+                    const isCalcChecked = data.calculator_enabled ? 'checked' : '';
+                    const isLedgerChecked = data.ledger_enabled ? 'checked' : '';
+                    
+                    const isSelfRole = roleName === 'admin';
+                    const disabledAttr = isSelfRole ? 'disabled' : '';
+
+                    row.innerHTML = `
+                        <td>${roleName.replace('_', ' ').toUpperCase()}</td>
+                        <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="webhook_enabled" ${isWebhookChecked} ${disabledAttr}></td>
+                        <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="deepseek_enabled" ${isDeepseekChecked} ${disabledAttr}></td>
+                        <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="calculator_enabled" ${isCalcChecked} ${disabledAttr}></td>
+                        <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="ledger_enabled" ${isLedgerChecked} ${disabledAttr}></td>
+                    `;
+                    
+                    row.querySelectorAll('.feature-toggle').forEach(checkbox => {
+                        checkbox.addEventListener('change', async (e) => {
+                            const r = e.target.dataset.role;
+                            const feat = e.target.dataset.feature;
+                            const isChecked = e.target.checked ? 1 : 0;
+                            await updateRoleFeatureFlag(r, feat, isChecked);
+                        });
+                    });
+
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="table-placeholder text-red">Error loading feature flags.</td>
+                    </tr>`;
+            }
+        } catch (e) {
+            console.error("Failed to load admin features:", e);
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="table-placeholder text-red">Connection error.</td>
+                </tr>`;
+        }
+    }
+
+    async function updateRoleFeatureFlag(role, featureName, enabledValue) {
+        try {
+            const getResp = await fetch(`${API_BASE}/api/admin/features`);
+            if (!getResp.ok) throw new Error("Failed to fetch current config");
+            const allFeatures = await getResp.json();
+            const currentRoleFeats = allFeatures[role] || {
+                webhook_enabled: 0,
+                deepseek_enabled: 0,
+                calculator_enabled: 0,
+                ledger_enabled: 0
+            };
+            
+            currentRoleFeats[featureName] = enabledValue;
+
+            const resp = await fetch(`${API_BASE}/api/admin/features/${role}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentRoleFeats)
+            });
+
+            if (resp.ok) {
+                appendConsoleLine(`[SYSTEM] Feature flags updated for role ${role.toUpperCase()}.`, 'line-success');
+            } else {
+                appendConsoleLine(`[SYSTEM] Failed to update feature flags for ${role.toUpperCase()}.`, 'line-error');
+            }
+        } catch (e) {
+            appendConsoleLine(`[SYSTEM] Error updating feature flags: ${e.message}`, 'line-error');
+        }
+    }
+
+    // -------------------------------------------------------------------------- //
+    // 7B. COMPOUND INTEREST CALCULATOR INTERACTIVE LOGIC                         //
+    // -------------------------------------------------------------------------- //
+
+    function initCompoundCalculator() {
+        const principalInput = document.getElementById('principal');
+        const principalSlider = document.getElementById('principalRange');
+        const monthlyInput = document.getElementById('monthly');
+        const monthlySlider = document.getElementById('monthlyRange');
+        const rateInput = document.getElementById('rate');
+        const rateSlider = document.getElementById('rateRange');
+        const inflationInput = document.getElementById('inflation');
+        const inflationSlider = document.getElementById('inflationRange');
+        const freqSelect = document.getElementById('frequency');
+        const yearsSlider = document.getElementById('yearsRange');
+        const yearsLabel = document.getElementById('yearsLabel');
+        const inspectYearSlider = document.getElementById('inspectYear');
+        const inspectYearLabel = document.getElementById('inspectYearLabel');
+        const btnCalc = document.getElementById('btnCalc');
+        const tableToggle = document.getElementById('tableToggle');
+        const tableWrap = document.getElementById('tableWrap');
+        const assetPicker = document.getElementById('assetPicker');
+
+        if (!principalInput) return;
+
+        const formatCur = (num) => new Intl.NumberFormat(currentLang === 'en' ? 'en-US' : 'es-ES', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+
+        const parseNum = (val) => {
+            const clean = val.replace(/[^0-9.-]/g, '');
+            return parseFloat(clean) || 0;
+        };
+
+        const syncSliderAndInput = (inputEl, sliderEl, isInt = true) => {
+            inputEl.addEventListener('input', () => {
+                let val = parseNum(inputEl.value);
+                sliderEl.value = val;
+                inputEl.value = isInt ? Math.round(val).toLocaleString() : val;
+                calculateGrowth();
+            });
+            sliderEl.addEventListener('input', () => {
+                inputEl.value = isInt ? Math.round(sliderEl.value).toLocaleString() : sliderEl.value;
+                calculateGrowth();
+            });
+        };
+
+        syncSliderAndInput(principalInput, principalSlider, true);
+        syncSliderAndInput(monthlyInput, monthlySlider, true);
+        syncSliderAndInput(rateInput, rateSlider, false);
+        syncSliderAndInput(inflationInput, inflationSlider, false);
+
+        if (freqSelect) freqSelect.addEventListener('change', calculateGrowth);
+        if (yearsSlider) {
+            yearsSlider.addEventListener('input', () => {
+                if (yearsLabel) yearsLabel.textContent = yearsSlider.value;
+                if (inspectYearSlider) {
+                    inspectYearSlider.max = yearsSlider.value;
+                    if (parseInt(inspectYearSlider.value) > parseInt(yearsSlider.value)) {
+                        inspectYearSlider.value = yearsSlider.value;
+                    }
+                }
+                calculateGrowth();
+            });
+        }
+
+        if (inspectYearSlider) {
+            inspectYearSlider.addEventListener('input', () => {
+                inspectYearLabel.textContent = (currentLang === 'en' ? 'Year ' : 'Año ') + inspectYearSlider.value;
+                updateInspectorDetails();
+            });
+        }
+
+        if (tableToggle && tableWrap) {
+            tableToggle.onclick = () => {
+                const isHidden = tableWrap.style.display === 'none';
+                tableWrap.style.display = isHidden ? 'block' : 'none';
+                const chevron = tableToggle.querySelector('.table-toggle-chevron');
+                if (chevron) {
+                    if (isHidden) chevron.classList.add('collapsed');
+                    else chevron.classList.remove('collapsed');
+                }
+            };
+        }
+
+        if (assetPicker) {
+            const buttons = assetPicker.querySelectorAll('.asset-btn');
+            buttons.forEach(btn => {
+                btn.onclick = () => {
+                    buttons.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    
+                    const asset = btn.dataset.asset;
+                    const preset = presets[asset];
+                    if (preset) {
+                        rateInput.value = preset.rate;
+                        rateSlider.value = preset.rate;
+                        inflationInput.value = preset.inflation;
+                        inflationSlider.value = preset.inflation;
+                        freqSelect.value = preset.frequency;
+                        calculateGrowth();
+                    }
+                };
+            });
+        }
+
+        if (btnCalc) {
+            btnCalc.onclick = calculateGrowth;
+        }
+
+        let calculatedPoints = [];
+
+        function calculateGrowth() {
+            const principal = parseNum(principalInput.value);
+            const monthly = parseNum(monthlyInput.value);
+            const rate = parseFloat(rateInput.value) / 100;
+            const inflation = parseFloat(inflationInput.value) / 100;
+            const frequency = parseInt(freqSelect.value);
+            const years = parseInt(yearsSlider.value);
+
+            calculatedPoints = [];
+            let balance = principal;
+            let contributions = 0;
+            let interestGains = 0;
+
+            for (let year = 1; year <= years; year++) {
+                for (let month = 1; month <= 12; month++) {
+                    balance += monthly;
+                    contributions += monthly;
+
+                    if (frequency === 12) {
+                        const interest = balance * (rate / 12);
+                        balance += interest;
+                        interestGains += interest;
+                    } 
+                    else if (frequency >= 12) {
+                        const interest = balance * (Math.pow(1 + rate / frequency, frequency / 12) - 1);
+                        balance += interest;
+                        interestGains += interest;
+                    } 
+                    else if (frequency === 4 && month % 3 === 0) {
+                        const interest = balance * (rate / 4);
+                        balance += interest;
+                        interestGains += interest;
+                    } 
+                    else if (frequency === 1 && month === 12) {
+                        const interest = balance * rate;
+                        balance += interest;
+                        interestGains += interest;
+                    }
+                }
+
+                const realValue = balance / Math.pow(1 + inflation, year);
+
+                calculatedPoints.push({
+                    year: year,
+                    principal: principal,
+                    contributions: contributions,
+                    interest: interestGains,
+                    balance: balance,
+                    realValue: realValue
+                });
+            }
+
+            const finalData = calculatedPoints[calculatedPoints.length - 1];
+            document.getElementById('sumTotal').textContent = formatCur(finalData.balance);
+            document.getElementById('sumInterest').textContent = formatCur(finalData.interest);
+            document.getElementById('sumReal').textContent = formatCur(finalData.realValue);
+
+            const tbody = document.getElementById('tableBody');
+            if (tbody) {
+                tbody.innerHTML = calculatedPoints.map(p => `
+                    <tr>
+                        <td style="text-align:left;">${currentLang === 'en' ? 'Year' : 'Año'} ${p.year}</td>
+                        <td>${formatCur(p.principal)}</td>
+                        <td>${formatCur(p.contributions)}</td>
+                        <td>${formatCur(p.interest)}</td>
+                        <td><strong>${formatCur(p.balance)}</strong></td>
+                        <td class="text-orange">${formatCur(p.realValue)}</td>
+                    </tr>
+                `).join('');
+            }
+
+            if (inspectYearSlider) {
+                inspectYearSlider.max = years;
+                if (parseInt(inspectYearSlider.value) > years) {
+                    inspectYearSlider.value = years;
+                }
+                inspectYearLabel.textContent = (currentLang === 'en' ? 'Year ' : 'Año ') + inspectYearSlider.value;
+            }
+
+            updateInspectorDetails();
+            drawChart();
+        }
+
+        function updateInspectorDetails() {
+            if (calculatedPoints.length === 0) return;
+            const inspectIdx = parseInt(inspectYearSlider.value) - 1;
+            const data = calculatedPoints[inspectIdx] || calculatedPoints[calculatedPoints.length - 1];
+
+            document.getElementById('inspPrincipal').textContent = formatCur(data.principal);
+            document.getElementById('inspContrib').textContent = formatCur(data.contributions);
+            document.getElementById('inspInterest').textContent = formatCur(data.interest);
+            document.getElementById('inspTotal').textContent = formatCur(data.balance);
+            document.getElementById('inspReal').textContent = formatCur(data.realValue);
+        }
+
+        function drawChart() {
+            const ctx = document.getElementById('compoundChart').getContext('2d');
+            if (compoundChartInstance) {
+                compoundChartInstance.destroy();
+            }
+
+            const yearsLabels = calculatedPoints.map(p => (currentLang === 'en' ? 'Yr ' : 'Año ') + p.year);
+            const balanceData = calculatedPoints.map(p => p.balance);
+            const contributionsData = calculatedPoints.map(p => p.principal + p.contributions);
+            const realValueData = calculatedPoints.map(p => p.realValue);
+
+            const isLight = document.body.classList.contains('light-mode');
+            const gridColor = isLight ? '#cbd5e1' : 'rgba(255, 255, 255, 0.05)';
+            const textColor = isLight ? '#0f172a' : '#94a3b8';
+
+            const activeBtn = assetPicker.querySelector('.asset-btn.active');
+            let primaryColor = '#00f3ff';
+            if (activeBtn) {
+                const accent = activeBtn.dataset.accent;
+                if (accent === 'emerald') primaryColor = '#10b981';
+                else if (accent === 'purple') primaryColor = '#a855f7';
+                else if (accent === 'orange') primaryColor = '#f97316';
+                else if (accent === 'blue') primaryColor = '#3b82f6';
+                else if (accent === 'gold') primaryColor = '#eab308';
+            }
+
+            compoundChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: yearsLabels,
+                    datasets: [
+                        {
+                            label: currentLang === 'en' ? 'Total Balance' : 'Saldo Total',
+                            data: balanceData,
+                            borderColor: primaryColor,
+                            backgroundColor: isLight ? 'rgba(0, 243, 255, 0.05)' : 'rgba(0, 243, 255, 0.02)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2
+                        },
+                        {
+                            label: currentLang === 'en' ? 'Total Contributions' : 'Contribuciones Totales',
+                            data: contributionsData,
+                            borderColor: isLight ? '#64748b' : 'rgba(255, 255, 255, 0.3)',
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.1,
+                            borderWidth: 1.5
+                        },
+                        {
+                            label: currentLang === 'en' ? 'Real Value (Inflation Adj.)' : 'Valor Real (Ajustado Inflación)',
+                            data: realValueData,
+                            borderColor: '#f97316',
+                            fill: false,
+                            tension: 0.2,
+                            borderWidth: 1.5
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: textColor,
+                                font: { family: 'JetBrains Mono, monospace', size: 9 }
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: isLight ? '#ffffff' : '#0d121e',
+                            titleColor: isLight ? '#0f172a' : '#ffffff',
+                            bodyColor: isLight ? '#0f172a' : '#ffffff',
+                            borderColor: primaryColor,
+                            borderWidth: 1,
+                            titleFont: { family: 'JetBrains Mono, monospace', size: 10 },
+                            bodyFont: { family: 'JetBrains Mono, monospace', size: 10 }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: gridColor },
+                            ticks: { color: textColor, font: { family: 'JetBrains Mono, monospace', size: 9 } }
+                        },
+                        y: {
+                            grid: { color: gridColor },
+                            ticks: { 
+                                color: textColor, 
+                                font: { family: 'JetBrains Mono, monospace', size: 9 },
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        calculateGrowth();
+    }
+
+    // -------------------------------------------------------------------------- //
     // 8. INITIALIZATION FLOW                                                      //
     // -------------------------------------------------------------------------- //
 
@@ -1106,14 +2430,312 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Launch WebSocket link
-    connectWebSocket();
+    // Trigger secure check auth flow
+    checkAuth();
 
-    // Start polling watchlist summary every 5 seconds
-    pollWatchlist();
-    watchlistPollInterval = setInterval(pollWatchlist, 5000);
+    // -------------------------------------------------------------------------- //
+    // 9. MOBILE UX — BOTTOM NAV, DRAWER, STATUS STRIP                           //
+    // -------------------------------------------------------------------------- //
 
-    // Start polling accumulation candidates every 10 seconds
-    pollAccumulationCandidates();
-    accumPollInterval = setInterval(pollAccumulationCandidates, 10000);
+    function initMobileUX() {
+        const IS_MOBILE = () => window.innerWidth <= 768;
+
+        // ── Element refs ──────────────────────────────────────────────
+        const bottomNav       = document.getElementById('mobile-bottom-nav');
+        const statusStrip     = document.getElementById('mobile-status-strip');
+        const drawer          = document.getElementById('mobile-drawer');
+        const drawerOverlay   = document.getElementById('mobile-drawer-overlay');
+        const btnOpenDrawer   = document.getElementById('btn-mobile-settings');
+        const btnCloseDrawer  = document.getElementById('btn-drawer-close');
+
+        // Mobile mirrors of desktop stats
+        const mssStatus   = document.getElementById('mss-status');
+        const mssDot      = document.getElementById('mss-pulse');
+        const mssPairs    = document.getElementById('mss-pairs');
+        const mssRate     = document.getElementById('mss-rate');
+        const drawerStatusTxt = document.getElementById('drawer-status-text');
+        const drawerPairs     = document.getElementById('drawer-pairs-count');
+        const drawerRate      = document.getElementById('drawer-rate-status');
+
+        // Mobile bottom nav buttons
+        const mobBtns = {
+            dashboard: document.getElementById('mob-nav-dashboard'),
+            accum:     document.getElementById('mob-nav-accum'),
+            watchlist: document.getElementById('mob-nav-watchlist'),
+            compound:  document.getElementById('mob-nav-compound'),
+            admin:     document.getElementById('mob-nav-admin'),
+        };
+
+        // Desktop panels that exist in the grid
+        const panels = {
+            dashboard: document.querySelector('.breakout-radar'),
+            accum:     document.querySelector('.accum-radar-panel'),
+            watchlist: document.querySelector('.telemetry-deck'),
+            compound:  document.getElementById('compound-interest-panel'),
+            admin:     document.getElementById('admin-console-panel'),
+        };
+
+        // ── Drawer open / close ───────────────────────────────────────
+        function openDrawer() {
+            drawer.classList.add('open');
+            drawerOverlay.classList.add('open');
+            document.body.style.overflow = 'hidden';
+            syncDrawerStats();
+        }
+        function closeDrawer() {
+            drawer.classList.remove('open');
+            drawerOverlay.classList.remove('open');
+            document.body.style.overflow = '';
+        }
+        if (btnOpenDrawer)  btnOpenDrawer.addEventListener('click', openDrawer);
+        if (btnCloseDrawer) btnCloseDrawer.addEventListener('click', closeDrawer);
+        if (drawerOverlay)  drawerOverlay.addEventListener('click', closeDrawer);
+
+        // ── Mobile bottom nav view switching ─────────────────────────
+        let activeView = 'dashboard';
+
+        function showMobileView(view) {
+            if (!IS_MOBILE()) return;
+            activeView = view;
+
+            // Update bottom nav active state
+            Object.entries(mobBtns).forEach(([key, btn]) => {
+                if (btn) btn.classList.toggle('active', key === view);
+            });
+
+            // For mobile: show only the target panel, hide others in the grid
+            // We do this by stacking panels vertically and hiding non-active ones
+            const grid = document.querySelector('.terminal-grid');
+            if (!grid) return;
+
+            // On mobile grid is 1-col — just scroll to the right panel
+            // Better: hide/show panels so only one is visible at a time
+            Object.entries(panels).forEach(([key, panel]) => {
+                if (!panel) return;
+                if (key === view) {
+                    panel.style.display = '';
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else if (key !== 'compound' && key !== 'admin') {
+                    // Standard grid panels hide/show
+                    panel.style.display = (key === view) ? '' : 'none';
+                }
+            });
+
+            // Special handling for compound / admin (they live outside the grid)
+            const compoundPanel = document.getElementById('compound-interest-panel');
+            const adminPanel    = document.getElementById('admin-console-panel');
+            const mainGrid      = document.querySelector('.terminal-grid');
+
+            if (view === 'compound') {
+                if (mainGrid)      mainGrid.style.display = 'none';
+                if (compoundPanel) { compoundPanel.style.display = 'grid'; compoundPanel.style.marginTop = '0'; }
+                if (adminPanel)    adminPanel.style.display = 'none';
+            } else if (view === 'admin') {
+                if (mainGrid)      mainGrid.style.display = 'none';
+                if (compoundPanel) compoundPanel.style.display = 'none';
+                if (adminPanel)    { adminPanel.style.display = 'block'; adminPanel.style.marginTop = '0'; }
+            } else {
+                if (compoundPanel) compoundPanel.style.display = 'none';
+                if (adminPanel)    adminPanel.style.display = 'none';
+                if (mainGrid)      mainGrid.style.display = 'grid';
+
+                // Show only the relevant grid panel
+                Object.entries(panels).forEach(([key, panel]) => {
+                    if (!panel || key === 'compound' || key === 'admin') return;
+                    panel.style.display = (key === view) ? '' : 'none';
+                });
+            }
+
+            // Close drawer if open
+            closeDrawer();
+        }
+
+        // Wire bottom nav buttons
+        Object.entries(mobBtns).forEach(([view, btn]) => {
+            if (btn) btn.addEventListener('click', () => showMobileView(view));
+        });
+
+        // Also expose compound nav button in top nav to mobile nav
+        const navCompound = document.getElementById('nav-compound');
+        if (navCompound) {
+            navCompound.addEventListener('click', () => {
+                if (IS_MOBILE()) showMobileView('compound');
+            });
+        }
+
+        // ── Desktop/Mobile mode toggle on resize ─────────────────────
+        function applyResponsiveMode() {
+            if (IS_MOBILE()) {
+                if (bottomNav)  bottomNav.style.display = 'flex';
+                if (statusStrip) statusStrip.style.display = 'flex';
+                // Restore view after resize
+                showMobileView(activeView);
+            } else {
+                if (bottomNav)  bottomNav.style.display = 'none';
+                if (statusStrip) statusStrip.style.display = 'none';
+                // Desktop: show all panels
+                const mainGrid = document.querySelector('.terminal-grid');
+                if (mainGrid) mainGrid.style.display = '';
+                const compoundPanel = document.getElementById('compound-interest-panel');
+                const adminPanel    = document.getElementById('admin-console-panel');
+                // Panels: restore desktop visibility
+                Object.values(panels).forEach(p => { if (p) p.style.display = ''; });
+                if (compoundPanel) compoundPanel.style.display = 'none'; // controlled by top nav
+                if (adminPanel)    adminPanel.style.display = 'none';
+                closeDrawer();
+            }
+        }
+
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(applyResponsiveMode, 80);
+        });
+
+        // Initial apply
+        applyResponsiveMode();
+
+        // ── Status strip sync (poll desktop stat elements) ───────────
+        function syncStatusStrip() {
+            if (!IS_MOBILE()) return;
+            // Sync from desktop stat elements
+            if (systemStatusText && mssStatus) {
+                mssStatus.textContent = systemStatusText.textContent;
+                if (drawerStatusTxt) drawerStatusTxt.textContent = systemStatusText.textContent;
+            }
+            if (trackedPairsCount && mssPairs) {
+                mssPairs.textContent = trackedPairsCount.textContent + ' PAIRS';
+                if (drawerPairs) drawerPairs.textContent = trackedPairsCount.textContent;
+            }
+            if (rateLimitStatus && mssRate) {
+                mssRate.textContent = rateLimitStatus.textContent;
+                if (drawerRate) drawerRate.textContent = rateLimitStatus.textContent;
+            }
+            // Sync status dot color
+            if (mssDot && systemStatusText) {
+                const isOnline = systemStatusText.textContent.includes('ONLINE');
+                mssDot.classList.toggle('online', isOnline);
+            }
+        }
+        setInterval(syncStatusStrip, 1500);
+
+        // ── Mobile drawer button mirrors ──────────────────────────────
+        // Start / Stop scanner
+        const mobStart = document.getElementById('btn-start-scanner-mobile');
+        const mobStop  = document.getElementById('btn-stop-scanner-mobile');
+        if (mobStart && btnStartScanner) {
+            mobStart.addEventListener('click', () => { btnStartScanner.click(); closeDrawer(); });
+        }
+        if (mobStop && btnStopScanner) {
+            mobStop.addEventListener('click', () => { btnStopScanner.click(); closeDrawer(); });
+        }
+
+        // Mirror scanner state to mobile buttons
+        function syncMobileButtons(isRunning) {
+            if (mobStart) {
+                mobStart.disabled = isRunning;
+                mobStart.classList.toggle('disabled', isRunning);
+            }
+            if (mobStop) {
+                mobStop.disabled = !isRunning;
+                mobStop.classList.toggle('disabled', !isRunning);
+            }
+        }
+
+        // Observe desktop button state changes with MutationObserver
+        if (btnStartScanner) {
+            new MutationObserver(() => {
+                const isRunning = btnStartScanner.disabled;
+                syncMobileButtons(isRunning);
+            }).observe(btnStartScanner, { attributes: true, attributeFilter: ['disabled'] });
+        }
+
+        // Save config from drawer
+        const mobSave = document.getElementById('btn-save-settings-mobile');
+        if (mobSave) {
+            mobSave.addEventListener('click', () => {
+                const mobInterval = document.getElementById('mob-interval-sec');
+                const mobMaxPairs = document.getElementById('mob-max-pairs');
+                const mobVol      = document.getElementById('mob-vol-threshold');
+                const mobPrice    = document.getElementById('mob-price-threshold');
+                if (mobInterval && mobInterval.value && inputIntervalSec) inputIntervalSec.value = mobInterval.value;
+                if (mobMaxPairs && mobMaxPairs.value && inputMaxPairs)     inputMaxPairs.value = mobMaxPairs.value;
+                if (mobVol && mobVol.value && inputVolumeThreshold)         inputVolumeThreshold.value = mobVol.value;
+                if (mobPrice && mobPrice.value && inputPriceThreshold)      inputPriceThreshold.value = mobPrice.value;
+                // Sync exchanges
+                const mobBinance     = document.getElementById('mob-chk-binance');
+                const mobBybit       = document.getElementById('mob-chk-bybit');
+                const mobHyperliquid = document.getElementById('mob-chk-hyperliquid');
+                const mobSpot        = document.getElementById('mob-chk-spot');
+                const mobFutures     = document.getElementById('mob-chk-futures');
+                if (mobBinance && chkExchangeBinance)         chkExchangeBinance.checked = mobBinance.checked;
+                if (mobBybit && chkExchangeBybit)             chkExchangeBybit.checked = mobBybit.checked;
+                if (mobHyperliquid && chkExchangeHyperliquid) chkExchangeHyperliquid.checked = mobHyperliquid.checked;
+                if (mobSpot && chkInstSpot)                   chkInstSpot.checked = mobSpot.checked;
+                if (mobFutures && chkInstFuture)              chkInstFuture.checked = mobFutures.checked;
+                // Trigger desktop save
+                if (btnSaveSettings) btnSaveSettings.click();
+                closeDrawer();
+            });
+        }
+
+        // Sync desktop values INTO drawer when opened
+        function syncDrawerStats() {
+            const mobInterval = document.getElementById('mob-interval-sec');
+            const mobMaxPairs = document.getElementById('mob-max-pairs');
+            const mobVol      = document.getElementById('mob-vol-threshold');
+            const mobPrice    = document.getElementById('mob-price-threshold');
+            if (mobInterval && inputIntervalSec && inputIntervalSec.value) mobInterval.value = inputIntervalSec.value;
+            if (mobMaxPairs && inputMaxPairs && inputMaxPairs.value)        mobMaxPairs.value = inputMaxPairs.value;
+            if (mobVol && inputVolumeThreshold && inputVolumeThreshold.value) mobVol.value = inputVolumeThreshold.value;
+            if (mobPrice && inputPriceThreshold && inputPriceThreshold.value) mobPrice.value = inputPriceThreshold.value;
+            syncStatusStrip();
+        }
+
+        // Simulate alert from drawer
+        const mobSim = document.getElementById('btn-sim-mobile');
+        if (mobSim && btnTriggerSimulation) {
+            mobSim.addEventListener('click', () => { btnTriggerSimulation.click(); closeDrawer(); });
+        }
+
+        // Theme toggle from drawer
+        const btnThemeMobile = document.getElementById('btn-theme-mobile');
+        if (btnThemeMobile && btnThemeToggle) {
+            btnThemeMobile.addEventListener('click', () => btnThemeToggle.click());
+        }
+
+        // Language toggle from drawer
+        const btnLangMobile = document.getElementById('btn-lang-mobile');
+        const drawerLangLabel = document.getElementById('drawer-lang-label');
+        if (btnLangMobile && btnLangToggle) {
+            btnLangMobile.addEventListener('click', () => {
+                btnLangToggle.click();
+                if (drawerLangLabel) drawerLangLabel.textContent = btnLangToggle.textContent.trim();
+            });
+        }
+
+        // Logout from drawer
+        const btnLogoutMobile = document.getElementById('btn-logout-mobile');
+        if (btnLogoutMobile && btnLogout) {
+            btnLogoutMobile.addEventListener('click', () => { closeDrawer(); btnLogout.click(); });
+        }
+
+        // ── Admin nav button visibility sync ─────────────────────────
+        // Mirror admin nav visibility to mobile bottom nav
+        function syncAdminNav() {
+            const mobAdminBtn = document.getElementById('mob-nav-admin');
+            if (!mobAdminBtn || !navAdmin) return;
+            mobAdminBtn.style.display = navAdmin.style.display === 'none' ? 'none' : '';
+        }
+        if (navAdmin) {
+            new MutationObserver(syncAdminNav).observe(navAdmin, { attributes: true, attributeFilter: ['style'] });
+        }
+        syncAdminNav();
+
+        // ── Expose showMobileView for external callers (e.g. router) ──
+        window._showMobileView = showMobileView;
+    }
+
+    initMobileUX();
 });
+
