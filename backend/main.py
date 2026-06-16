@@ -6,6 +6,9 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import json
 import logging
 import random
@@ -22,6 +25,9 @@ import aiohttp
 
 from backend.scanner import AutonomousScanner
 from backend import users_db
+from backend import email_dispatcher
+
+SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -78,6 +84,7 @@ class FeatureUpdateModel(BaseModel):
     deepseek_enabled: int
     calculator_enabled: int
     ledger_enabled: int
+    simulation_enabled: int
 
 
 class TradeCreateModel(BaseModel):
@@ -502,7 +509,7 @@ async def google_callback(
         httponly=True,
         samesite="lax",
         max_age=604800,
-        secure=False
+        secure=SECURE_COOKIES
     )
     return response
 
@@ -514,9 +521,17 @@ async def signup(payload: SignupModel):
         
     user = users_db.register_user(payload.email, payload.name, payload.password)
     logger.info(f"🔑 [SIGNUP] New user registration code for {payload.email}: {user.get('confirmation_code')}")
+    
+    # Send confirmation email
+    email_dispatcher.send_confirmation_email(
+        email=payload.email,
+        name=payload.name,
+        code=user.get("confirmation_code")
+    )
+    
     return {
         "status": "SUCCESS", 
-        "message": "User registered. Confirmation required.", 
+        "message": "User registered. Confirmation email sent.", 
         "dev_code": user.get("confirmation_code"), 
         "email": payload.email
     }
@@ -550,7 +565,7 @@ async def login(payload: LoginModel, response: Response):
         httponly=True,
         samesite="lax",
         max_age=604800,
-        secure=False
+        secure=SECURE_COOKIES
     )
     return {"status": "SUCCESS", "user": user}
 
@@ -560,7 +575,14 @@ async def forgot_password(payload: ForgotPasswordModel):
     if not token:
         raise HTTPException(status_code=400, detail="User not found")
     logger.info(f"🔑 [FORGOT PASSWORD] Reset code for {payload.email}: {token}")
-    return {"status": "SUCCESS", "message": "Password reset token sent", "dev_token": token}
+    
+    # Send password reset email
+    email_dispatcher.send_password_reset_email(
+        email=payload.email,
+        token=token
+    )
+    
+    return {"status": "SUCCESS", "message": "Password reset email sent", "dev_token": token}
 
 @app.post("/api/auth/reset-password")
 async def reset_password(payload: ResetPasswordModel):
@@ -571,9 +593,12 @@ async def reset_password(payload: ResetPasswordModel):
 
 @app.get("/api/admin/system-stats")
 async def get_system_stats(current_admin: dict = Depends(get_current_admin)):
-    with users_db.get_db_conn() as conn:
-        total_users = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()["count"]
-        active_sessions = conn.execute("SELECT COUNT(*) as count FROM sessions").fetchone()["count"]
+    now_str = datetime.datetime.now().isoformat()
+    # Clean up expired sessions first
+    users_db.db_query("DELETE FROM sessions WHERE expires_at <= ?", (now_str,), commit=True)
+    
+    total_users = users_db.db_query("SELECT COUNT(*) as count FROM users", fetch="scalar")
+    active_sessions = users_db.db_query("SELECT COUNT(*) as count FROM sessions", fetch="scalar")
     
     monitored_count = sum(len(v) for v in scanner.monitored_pairs.values())
     alerts_count = len(scanner.logs_history)
@@ -644,7 +669,8 @@ async def update_admin_features(
         webhook_enabled=payload.webhook_enabled,
         deepseek_enabled=payload.deepseek_enabled,
         calculator_enabled=payload.calculator_enabled,
-        ledger_enabled=payload.ledger_enabled
+        ledger_enabled=payload.ledger_enabled,
+        simulation_enabled=payload.simulation_enabled
     )
     if not success:
         raise HTTPException(status_code=400, detail="Failed to update features")

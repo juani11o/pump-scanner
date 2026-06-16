@@ -452,12 +452,24 @@ document.addEventListener('DOMContentLoaded', () => {
             webhook_enabled: 0,
             deepseek_enabled: 0,
             calculator_enabled: 1,
-            ledger_enabled: 0
+            ledger_enabled: 0,
+            simulation_enabled: 0
         };
         
         // Admin Console tab visibility
         if (navAdmin) {
             navAdmin.style.display = isAdmin ? 'inline-block' : 'none';
+        }
+        
+        // Simulation panel/deck gating (admins only & simulation feature flag enabled)
+        const hasSimulation = isAdmin && !!features.simulation_enabled;
+        const simulationDeck = document.getElementById('simulation-deck');
+        const mobileSimulationSection = document.getElementById('mobile-simulation-section');
+        if (simulationDeck) {
+            simulationDeck.style.display = hasSimulation ? 'block' : 'none';
+        }
+        if (mobileSimulationSection) {
+            mobileSimulationSection.style.display = hasSimulation ? 'block' : 'none';
         }
         
         // Disable/enable admin controls
@@ -2015,7 +2027,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" class="table-placeholder">Loading features configuration...</td>
+                <td colspan="6" class="table-placeholder">Loading features configuration...</td>
             </tr>`;
 
         try {
@@ -2035,6 +2047,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const isDeepseekChecked = data.deepseek_enabled ? 'checked' : '';
                     const isCalcChecked = data.calculator_enabled ? 'checked' : '';
                     const isLedgerChecked = data.ledger_enabled ? 'checked' : '';
+                    const isSimulationChecked = data.simulation_enabled ? 'checked' : '';
                     
                     const isSelfRole = roleName === 'admin';
                     const disabledAttr = isSelfRole ? 'disabled' : '';
@@ -2045,6 +2058,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="deepseek_enabled" ${isDeepseekChecked} ${disabledAttr}></td>
                         <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="calculator_enabled" ${isCalcChecked} ${disabledAttr}></td>
                         <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="ledger_enabled" ${isLedgerChecked} ${disabledAttr}></td>
+                        <td><input type="checkbox" class="feature-toggle" data-role="${roleName}" data-feature="simulation_enabled" ${isSimulationChecked} ${disabledAttr}></td>
                     `;
                     
                     row.querySelectorAll('.feature-toggle').forEach(checkbox => {
@@ -2061,14 +2075,14 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="5" class="table-placeholder text-red">Error loading feature flags.</td>
+                        <td colspan="6" class="table-placeholder text-red">Error loading feature flags.</td>
                     </tr>`;
             }
         } catch (e) {
             console.error("Failed to load admin features:", e);
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="table-placeholder text-red">Connection error.</td>
+                    <td colspan="6" class="table-placeholder text-red">Connection error.</td>
                 </tr>`;
         }
     }
@@ -2082,7 +2096,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 webhook_enabled: 0,
                 deepseek_enabled: 0,
                 calculator_enabled: 0,
-                ledger_enabled: 0
+                ledger_enabled: 0,
+                simulation_enabled: 0
             };
             
             currentRoleFeats[featureName] = enabledValue;

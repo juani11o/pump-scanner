@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # Database for Pump Scanner
+  scanner-db:
+    image: postgres:15-alpine
+    container_name: pump-scanner-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-pump_scanner_db}
+    ports:
+      - "5433:5432"
+    volumes:
+      - scanner_db_data:/var/lib/postgresql/data
+
+  # Redis for caching and session state
+  scanner-redis:
+    image: redis:7-alpine
+    container_name: pump-scanner-redis
+    restart: always
+    ports:
+      - "6380:6379"
+
+  # Mailpit for local SMTP testing
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: pump-scanner-mailpit
+    restart: always
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI port
+
+volumes:
+  scanner_db_data:

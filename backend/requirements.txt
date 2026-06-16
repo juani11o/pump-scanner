@@ -5,3 +5,6 @@ pandas
 nltk
 aiohttp
 websockets
+bcrypt
+psycopg2-binary
+python-dotenv

@@ -200,7 +200,7 @@
                     </div>
                 </div>
                 <!-- Simulate -->
-                <div class="drawer-section">
+                <div class="drawer-section" id="mobile-simulation-section" style="display: none;">
                     <div class="drawer-section-title">SIMULATE ALERT</div>
                     <button class="btn btn-neon btn-block" id="btn-sim-mobile">
                         <i class="fa-solid fa-bolt"></i> FIRE SIMULATED ALERT
@@ -383,12 +383,17 @@
                     <div class="divider"></div>
 
                     <!-- Webhook test and status -->
-                    <div class="simulation-deck">
+                    <div class="simulation-deck" id="simulation-deck" style="display: none;">
                         <label data-translate="INTELLIGENCE_SIMULATOR">INTELLIGENCE_SIMULATOR</label>
                         <p class="panel-subtext" data-translate="SIMULATOR_SUBTEXT">Trigger a mock Stage 3 breakout to test alerts, metrics calculations, and webhook payload routing.</p>
-                        <button class="btn btn-neon" id="btn-trigger-simulation">
-                            <i class="fa-solid fa-bolt"></i> <span data-translate="FIRE_SIMULATED_ALERT">FIRE SIMULATED ALERT</span>
-                        </button>
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="btn btn-neon" id="btn-trigger-simulation">
+                                <i class="fa-solid fa-bolt"></i> <span data-translate="FIRE_SIMULATED_ALERT">FIRE SIMULATED ALERT</span>
+                            </button>
+                            <button class="btn btn-purple" id="btn-trigger-accum-sim">
+                                <i class="fa-solid fa-eye"></i> <span data-translate="FIRE_ACCUM_SIM">SIMULATE ACCUM</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -464,13 +469,7 @@
                     <span class="accum-live-badge" id="accum-candidate-count">0 CANDIDATES</span>
                 </div>
                 <div class="panel-body flex-column">
-                    <!-- Simulation Button -->
-                    <div class="accum-sim-bar">
-                        <span class="panel-subtext" data-translate="ACCUM_SUBTEXT">Detecting pre-pump accumulation patterns before breakout develops.</span>
-                        <button class="btn btn-purple" id="btn-trigger-accum-sim">
-                            <i class="fa-solid fa-eye"></i> <span data-translate="FIRE_ACCUM_SIM">SIMULATE ACCUM</span>
-                        </button>
-                    </div>
+
                     <!-- Score Legend -->
                     <div class="accum-legend">
                         <span class="legend-dot dot-watching"></span><span>WATCHING ≥55</span>
@@ -638,11 +637,12 @@
                                     <th>DeepSeek AI Analysis</th>
                                     <th>Compound Calculator</th>
                                     <th>Trades Ledger</th>
+                                    <th>Intelligence Simulator</th>
                                 </tr>
                             </thead>
                             <tbody id="admin-features-table-body">
                                 <tr>
-                                    <td colspan="5" class="table-placeholder">Loading features configuration...</td>
+                                    <td colspan="6" class="table-placeholder">Loading features configuration...</td>
                                 </tr>
                             </tbody>
                         </table>
