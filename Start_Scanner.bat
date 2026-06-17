@@ -17,7 +17,7 @@ if %errorlevel% neq 0 (
 
 :: Create Virtual Environment if it does not exist
 if not exist "venv" (
-    echo [SYSTEM] Creating a isolated Python virtual environment (venv)...
+    echo [SYSTEM] Creating an isolated Python virtual environment...
     python -m venv venv
 )
 

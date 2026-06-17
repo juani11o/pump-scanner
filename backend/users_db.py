@@ -122,6 +122,9 @@ def init_db():
                 )
             """)
             cursor.execute("ALTER TABLE role_features ADD COLUMN IF NOT EXISTS simulation_enabled INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE role_features ADD COLUMN IF NOT EXISTS advanced_features_enabled INTEGER DEFAULT 0");
+            # Backfill advanced_features_enabled based on webhook or deepseek flags
+            cursor.execute("UPDATE role_features SET advanced_features_enabled = CASE WHEN webhook_enabled = 1 OR deepseek_enabled = 1 THEN 1 ELSE 0 END");
         else:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -431,15 +434,125 @@ def delete_user(user_id: str) -> bool:
     db_query("DELETE FROM users WHERE id = ?", (user_id,), commit=True)
     return True
 
-def add_trade(user_id: str, ticker: str, trade_type: str, entry_price: float, exit_price: float, profit_pct: float, notes: str) -> int:
+TRADE_JOURNAL_COLUMNS = {
+    "platform": "TEXT DEFAULT ''",
+    "asset_class": "TEXT DEFAULT 'crypto'",
+    "symbol": "TEXT DEFAULT ''",
+    "side": "TEXT DEFAULT 'long'",
+    "status": "TEXT DEFAULT 'closed'",
+    "entry_date": "TEXT DEFAULT ''",
+    "exit_date": "TEXT DEFAULT ''",
+    "quantity": "REAL DEFAULT 0",
+    "fees": "REAL DEFAULT 0",
+    "profit_loss": "REAL DEFAULT 0",
+    "strategy": "TEXT DEFAULT ''",
+    "setup": "TEXT DEFAULT ''",
+    "timeframe": "TEXT DEFAULT ''",
+    "conviction": "INTEGER DEFAULT 5",
+    "emotion": "TEXT DEFAULT ''",
+    "mistakes": "TEXT DEFAULT ''",
+    "lessons": "TEXT DEFAULT ''",
+    "tags": "TEXT DEFAULT ''"
+}
+
+def ensure_trade_journal_columns() -> None:
+    conn = get_db_conn()
+    try:
+        cursor = conn.cursor()
+        if is_postgres():
+            cursor.execute("""
+                ALTER TABLE profitable_trades
+                ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS asset_class TEXT DEFAULT 'crypto',
+                ADD COLUMN IF NOT EXISTS symbol TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS side TEXT DEFAULT 'long',
+                ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'closed',
+                ADD COLUMN IF NOT EXISTS entry_date TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS exit_date TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS quantity REAL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS fees REAL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS profit_loss REAL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS strategy TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS setup TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS timeframe TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS conviction INTEGER DEFAULT 5,
+                ADD COLUMN IF NOT EXISTS emotion TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS mistakes TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS lessons TEXT DEFAULT '',
+                ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT ''
+            """)
+        else:
+            cursor.execute("PRAGMA table_info(profitable_trades)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            for col, definition in TRADE_JOURNAL_COLUMNS.items():
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE profitable_trades ADD COLUMN {col} {definition}")
+        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
+
+def add_trade(user_id: str, trade: Dict[str, Any]) -> int:
+    ensure_trade_journal_columns()
+    symbol = trade.get("symbol", "").upper()
+    trade_type = trade.get("trade_type", "spot")
+    entry_price = float(trade.get("entry_price") or 0)
+    exit_price = trade.get("exit_price")
+    quantity = float(trade.get("quantity") or 0)
+    fees = float(trade.get("fees") or 0)
+    profit_loss = trade.get("profit_loss")
+    profit_pct = trade.get("profit_pct")
+
+    if exit_price in ("", None):
+        exit_price = 0
+    exit_price = float(exit_price)
+
+    if profit_loss in ("", None):
+        direction = -1 if trade.get("side") == "short" else 1
+        profit_loss = ((exit_price - entry_price) * quantity * direction) - fees if exit_price and quantity else 0
+    profit_loss = float(profit_loss)
+
+    if profit_pct in ("", None):
+        cost_basis = entry_price * quantity
+        profit_pct = (profit_loss / cost_basis * 100) if cost_basis else 0
+    profit_pct = float(profit_pct)
+
+    values = {
+        "user_id": user_id,
+        "ticker": symbol,
+        "type": trade_type,
+        "entry_price": entry_price,
+        "exit_price": exit_price,
+        "profit_pct": profit_pct,
+        "notes": trade.get("notes", ""),
+        "platform": trade.get("platform", ""),
+        "asset_class": trade.get("asset_class", "crypto"),
+        "symbol": symbol,
+        "side": trade.get("side", "long"),
+        "status": trade.get("status", "closed"),
+        "entry_date": trade.get("entry_date", ""),
+        "exit_date": trade.get("exit_date", ""),
+        "quantity": quantity,
+        "fees": fees,
+        "profit_loss": profit_loss,
+        "strategy": trade.get("strategy", ""),
+        "setup": trade.get("setup", ""),
+        "timeframe": trade.get("timeframe", ""),
+        "conviction": int(trade.get("conviction") or 5),
+        "emotion": trade.get("emotion", ""),
+        "mistakes": trade.get("mistakes", ""),
+        "lessons": trade.get("lessons", ""),
+        "tags": trade.get("tags", "")
+    }
+
+    columns = list(values.keys())
+    placeholders = ", ".join(["?"] * len(columns))
+    column_sql = ", ".join(columns)
+
     if is_postgres():
-        # PostgreSQL RETURNING id query
         trade_id = db_query(
-            """
-            INSERT INTO profitable_trades (user_id, ticker, type, entry_price, exit_price, profit_pct, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
-            """,
-            (user_id, ticker, trade_type, entry_price, exit_price, profit_pct, notes),
+            f"INSERT INTO profitable_trades ({column_sql}) VALUES ({placeholders}) RETURNING id",
+            tuple(values.values()),
             fetch="scalar",
             commit=True
         )
@@ -449,11 +562,8 @@ def add_trade(user_id: str, ticker: str, trade_type: str, entry_price: float, ex
         try:
             cursor = conn.cursor()
             cursor.execute(
-                """
-                INSERT INTO profitable_trades (user_id, ticker, type, entry_price, exit_price, profit_pct, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (user_id, ticker, trade_type, entry_price, exit_price, profit_pct, notes)
+                f"INSERT INTO profitable_trades ({column_sql}) VALUES ({placeholders})",
+                tuple(values.values())
             )
             conn.commit()
             trade_id = cursor.lastrowid
@@ -463,6 +573,7 @@ def add_trade(user_id: str, ticker: str, trade_type: str, entry_price: float, ex
             conn.close()
 
 def get_user_trades(user_id: str) -> List[Dict[str, Any]]:
+    ensure_trade_journal_columns()
     return db_query("SELECT * FROM profitable_trades WHERE user_id = ? ORDER BY created_at DESC", (user_id,), fetch="all")
 
 def delete_trade(user_id: str, trade_id: int) -> bool:

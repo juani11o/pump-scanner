@@ -65,6 +65,8 @@ scanner = AutonomousScanner(log_queue=log_queue, alert_callback=on_alert_detecte
 class SettingsModel(BaseModel):
     webhook_url: str
     deepseek_api_key: str = ""
+    llm_provider: str = "deepseek"
+    llm_api_key: str = ""
     interval_sec: int
     volume_multiplier: float
     price_velocity_pct: float
@@ -291,6 +293,31 @@ async def get_pairs_summary(current_user: dict = Depends(get_current_user)):
 async def get_accumulation_candidates(current_user: dict = Depends(get_current_user)):
     """Returns the current ranked list of Stage 0 pre-pump accumulation candidates"""
     return {"candidates": scanner.accumulation_candidates}
+
+class TradeIdeaRequestModel(BaseModel):
+    ticker: str
+    signal_type: str
+    metrics: dict
+    provider: str
+    api_key: Optional[str] = None
+
+@app.post("/api/generate_trade_idea")
+async def generate_trade_idea(payload: TradeIdeaRequestModel, current_user: dict = Depends(get_current_user)):
+    api_key = payload.api_key
+    if not api_key:
+        if payload.provider == scanner.settings.get("llm_provider"):
+            api_key = scanner.settings.get("llm_api_key")
+        elif payload.provider == "deepseek" and scanner.settings.get("deepseek_api_key"):
+            api_key = scanner.settings.get("deepseek_api_key")
+            
+    result = await scanner.evaluate_multi_provider_decision(
+        provider=payload.provider,
+        api_key=api_key,
+        ticker=payload.ticker,
+        signal_type=payload.signal_type,
+        metrics=payload.metrics
+    )
+    return result
 
 @app.get("/api/discovery")
 async def get_discovery(current_user: dict = Depends(get_current_user)):

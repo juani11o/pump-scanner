@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Allow: /calculator
+Allow: /trades
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://pump-scanner.com/sitemap.xml

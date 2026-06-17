@@ -2,6 +2,8 @@
 // CRYPTO PUMP SCANNER FRONTEND LOGIC                                         //
 // -------------------------------------------------------------------------- //
 
+import { currentUser as commonUser, currentLang } from './common.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     // API endpoint references
     const API_BASE = `${window.location.protocol}//${window.location.host}`;
@@ -84,6 +86,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const ledgerLockedModal = document.getElementById('ledger-locked-modal');
     const btnCloseLedgerModal = document.getElementById('btn-close-ledger-modal');
     const btnCloseLedgerModalOk = document.getElementById('btn-close-ledger-modal-ok');
+    const tradesLedgerPanel = document.getElementById('trades-ledger-panel');
+    const tradeJournalForm = document.getElementById('trade-journal-form');
+    const tradeJournalTableBody = document.getElementById('trade-journal-table-body');
+    const tradeSearch = document.getElementById('trade-search');
+    const btnJournalAnalytics = document.getElementById('btn-journal-analytics');
 
     // Email/Password Auth Forms & Panels
     const formLogin = document.getElementById('form-login');
@@ -142,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isAuthInitialized = false;
     let confirmEmailState = '';
     let resetEmailState = '';
+    let tradeJournalEntries = [];
 
     // Sorting State
     let sortKey = 'symbol';
@@ -158,291 +166,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------------------- //
     // 0. AUTHENTICATION & ROLE-BASED ACCESS CONTROL                              //
     // -------------------------------------------------------------------------- //
-
-    async function checkAuth() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/auth/user`);
-            if (resp.status === 200) {
-                currentUser = await resp.json();
-                
-                // Populate profile badge
-                if (userName) userName.innerText = currentUser.name;
-                if (userAvatar) userAvatar.src = currentUser.picture || 'https://api.dicebear.com/7.x/bottts/svg?seed=default';
-                
-                if (userRoleBadge) {
-                    userRoleBadge.innerText = currentUser.role.replace('_', ' ').toUpperCase();
-                    userRoleBadge.className = `badge badge-${currentUser.role}`;
-                }
-                
-                // Show navigation & badge
-                if (headerNav) headerNav.style.display = 'flex';
-                if (userProfileBadge) userProfileBadge.style.display = 'flex';
-                if (loginOverlay) loginOverlay.style.display = 'none';
-                
-                // Apply RBAC UI Gates
-                applyRoleGates();
-                
-                // Initialize background data feeds
-                initSystem();
-            } else {
-                handleUnauthorized();
-            }
-        } catch (e) {
-            console.error("Auth check failed:", e);
-            handleUnauthorized();
-        }
-    }
-
-    function handleUnauthorized() {
-        currentUser = null;
-        if (headerNav) headerNav.style.display = 'none';
-        if (userProfileBadge) userProfileBadge.style.display = 'none';
-        if (loginOverlay) loginOverlay.style.display = 'flex';
-        
-        // Reset sub auth view to main panel
-        showAuthView('main');
-        hideDevCode();
-        
-        // Stop polling and socket
-        if (watchlistPollInterval) clearInterval(watchlistPollInterval);
-        if (accumPollInterval) clearInterval(accumPollInterval);
-        if (ws) {
-            ws.onclose = null; // Prevent reconnect loops
-            ws.close();
-        }
-    }
-
-    function showAuthView(viewName) {
-        if (!authPanelMain || !authPanelConfirm || !authPanelForgot || !authPanelReset) return;
-        authPanelMain.style.display = 'none';
-        authPanelConfirm.style.display = 'none';
-        authPanelForgot.style.display = 'none';
-        authPanelReset.style.display = 'none';
-        
-        if (viewName === 'main') {
-            authPanelMain.style.display = 'block';
-        } else if (viewName === 'confirm') {
-            authPanelConfirm.style.display = 'block';
-        } else if (viewName === 'forgot') {
-            authPanelForgot.style.display = 'block';
-        } else if (viewName === 'reset') {
-            authPanelReset.style.display = 'block';
-        }
-    }
-
-    function showDevCode(type, code) {
-        if (devCodeToast && devCodeText) {
-            devCodeText.innerHTML = `${type.toUpperCase()} CODE: <strong style="color:var(--yellow); font-size:14px; letter-spacing:1px;">${code}</strong>`;
-            devCodeToast.style.display = 'flex';
-        }
-    }
-    
-    function hideDevCode() {
-        if (devCodeToast) devCodeToast.style.display = 'none';
-    }
-
-    // Bind login/signup tabs
-    if (tabLogin) {
-        tabLogin.addEventListener('click', () => {
-            tabLogin.classList.add('active');
-            if (tabSignup) tabSignup.classList.remove('active');
-            if (formLogin) formLogin.style.display = 'block';
-            if (formSignup) formSignup.style.display = 'none';
-        });
-    }
-    
-    if (tabSignup) {
-        tabSignup.addEventListener('click', () => {
-            tabSignup.classList.add('active');
-            if (tabLogin) tabLogin.classList.remove('active');
-            if (formSignup) formSignup.style.display = 'block';
-            if (formLogin) formLogin.style.display = 'none';
-        });
-    }
-
-    // Forgot password view switch
-    if (linkForgotPassword) {
-        linkForgotPassword.addEventListener('click', (e) => {
-            e.preventDefault();
-            showAuthView('forgot');
-        });
-    }
-
-    const backToLogin = (e) => {
-        e.preventDefault();
-        hideDevCode();
-        showAuthView('main');
-    };
-
-    if (linkForgotBack) linkForgotBack.addEventListener('click', backToLogin);
-    if (linkConfirmBack) linkConfirmBack.addEventListener('click', backToLogin);
-    if (linkResetBack) linkResetBack.addEventListener('click', backToLogin);
-
-    // Password visibility toggle logic
-    const togglePasswordButtons = document.querySelectorAll('.btn-toggle-password');
-    togglePasswordButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const input = btn.previousElementSibling;
-            if (input && (input.type === 'password' || input.type === 'text')) {
-                const isPassword = input.type === 'password';
-                input.type = isPassword ? 'text' : 'password';
-                btn.innerHTML = isPassword 
-                    ? '<i class="fa-solid fa-eye-slash"></i>' 
-                    : '<i class="fa-solid fa-eye"></i>';
-            }
-        });
-    });
-
-    // Form Submits: Login
-    if (formLogin) {
-        formLogin.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = inputLoginUsername.value.trim();
-            const password = inputLoginPassword.value;
-            
-            try {
-                const resp = await fetch(`${API_BASE}/api/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                
-                if (resp.ok) {
-                    window.location.reload();
-                } else if (resp.status === 403) {
-                    // Email confirmation needed
-                    const data = await resp.json();
-                    confirmEmailState = data.email || username;
-                    alert("Email verification required before accessing terminal.");
-                    showAuthView('confirm');
-                } else {
-                    const err = await resp.json();
-                    alert(err.detail || "Authentication failed.");
-                }
-            } catch (err) {
-                alert("Connection failed: " + err.message);
-            }
-        });
-    }
-
-    // Form Submits: Signup
-    if (formSignup) {
-        formSignup.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const name = inputSignupName.value.trim();
-            const email = inputSignupEmail.value.trim();
-            const password = inputSignupPassword.value;
-            
-            try {
-                const resp = await fetch(`${API_BASE}/api/auth/signup`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, name, password })
-                });
-                
-                if (resp.ok) {
-                    const data = await resp.json();
-                    confirmEmailState = data.email;
-                    showAuthView('confirm');
-                    if (data.dev_code) {
-                        showDevCode("Verification", data.dev_code);
-                    }
-                } else {
-                    const err = await resp.json();
-                    alert(err.detail || "Registration failed.");
-                }
-            } catch (err) {
-                alert("Connection failed: " + err.message);
-            }
-        });
-    }
-
-    // Form Submits: Confirm Email Code
-    if (formConfirm) {
-        formConfirm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const code = inputConfirmCode.value.trim();
-            
-            try {
-                const resp = await fetch(`${API_BASE}/api/auth/confirm-email`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: confirmEmailState, code })
-                });
-                
-                if (resp.ok) {
-                    alert("Email verified successfully! You can now log in.");
-                    hideDevCode();
-                    showAuthView('main');
-                    if (tabLogin) tabLogin.click();
-                } else {
-                    const err = await resp.json();
-                    alert(err.detail || "Invalid confirmation code.");
-                }
-            } catch (err) {
-                alert("Connection failed: " + err.message);
-            }
-        });
-    }
-
-    // Form Submits: Forgot Password (request token)
-    if (formForgot) {
-        formForgot.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = inputForgotEmail.value.trim();
-            resetEmailState = email;
-            
-            try {
-                const resp = await fetch(`${API_BASE}/api/auth/forgot-password`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                
-                if (resp.ok) {
-                    const data = await resp.json();
-                    showAuthView('reset');
-                    if (data.dev_token) {
-                        showDevCode("Reset Code", data.dev_token);
-                    }
-                } else {
-                    const err = await resp.json();
-                    alert(err.detail || "Failed to trigger reset.");
-                }
-            } catch (err) {
-                alert("Connection failed: " + err.message);
-            }
-        });
-    }
-
-    // Form Submits: Reset Password
-    if (formReset) {
-        formReset.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const token = inputResetToken.value.trim();
-            const password = inputResetPassword.value;
-            
-            try {
-                const resp = await fetch(`${API_BASE}/api/auth/reset-password`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: resetEmailState, token, password })
-                });
-                
-                if (resp.ok) {
-                    alert("Password updated successfully! Log in with your new credentials.");
-                    hideDevCode();
-                    showAuthView('main');
-                    if (tabLogin) tabLogin.click();
-                } else {
-                    const err = await resp.json();
-                    alert(err.detail || "Failed to reset password.");
-                }
-            } catch (err) {
-                alert("Connection failed: " + err.message);
-            }
-        });
-    }
 
     function applyRoleGates() {
         if (!currentUser) return;
@@ -463,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Simulation panel/deck gating (admins only & simulation feature flag enabled)
         const hasSimulation = isAdmin && !!features.simulation_enabled;
-        const simulationDeck = document.getElementById('simulation-deck');
+        const simulationDeck = document.getElementById('simulation_deck') || document.getElementById('simulation-deck');
         const mobileSimulationSection = document.getElementById('mobile-simulation-section');
         if (simulationDeck) {
             simulationDeck.style.display = hasSimulation ? 'block' : 'none';
@@ -496,36 +219,71 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Webhook inputs gating
         const hasWebhooks = !!features.webhook_enabled;
+        const nodeWebhook = document.getElementById('node-webhook');
+        const fgWebhook = document.getElementById('fg-webhook');
+        console.log('[RBAC] webhook_enabled=', features.webhook_enabled, 'hasWebhooks=', hasWebhooks);
+        if (fgWebhook) {
+            fgWebhook.style.display = hasWebhooks ? '' : 'none';
+        }
         if (inputWebhookUrl) {
             if (hasWebhooks) {
                 inputWebhookUrl.removeAttribute('disabled');
                 inputWebhookUrl.placeholder = "Enter webhook url...";
                 inputWebhookUrl.title = "";
                 inputWebhookUrl.parentElement.classList.remove('gated-feature-lock');
+                if (nodeWebhook) nodeWebhook.style.display = 'block';
             } else {
                 inputWebhookUrl.setAttribute('disabled', 'true');
                 inputWebhookUrl.value = "";
                 inputWebhookUrl.placeholder = "🔒 LOCKED (UPGRADE REQUIRED)";
                 inputWebhookUrl.title = "WEBHOOK DISPATCH IS GATED FOR PREMIUM ROLES";
+                if (nodeWebhook) nodeWebhook.style.display = 'none';
             }
         }
 
-        // DeepSeek inputs gating
+        // LLM inputs gating
         const hasDeepSeek = !!features.deepseek_enabled;
+        const selectLlmProvider = document.getElementById('select-llm-provider');
+        const btnLlmSso = document.getElementById('btn-llm-sso');
+        const fgDeepseek = document.getElementById('fg-deepseek');
+        const fgLlmKeyContainer = document.getElementById('fg-llm-key-container');
+        
+        console.log('[RBAC] deepseek_enabled=', features.deepseek_enabled, 'hasLLM=', hasDeepSeek);
+        
+        if (fgDeepseek) fgDeepseek.style.display = hasDeepSeek ? '' : 'none';
+        if (fgLlmKeyContainer) fgLlmKeyContainer.style.display = hasDeepSeek ? '' : 'none';
+        
+        if (selectLlmProvider) {
+            if (hasDeepSeek) selectLlmProvider.removeAttribute('disabled');
+            else selectLlmProvider.setAttribute('disabled', 'true');
+        }
+        
         if (inputDeepseekKey) {
             if (hasDeepSeek) {
                 inputDeepseekKey.removeAttribute('disabled');
-                inputDeepseekKey.placeholder = "Enter DeepSeek api key...";
+                inputDeepseekKey.placeholder = "Enter API key or use SSO...";
                 inputDeepseekKey.title = "";
+                if (inputDeepseekKey.parentElement) inputDeepseekKey.parentElement.classList.remove('gated-feature-lock');
             } else {
                 inputDeepseekKey.setAttribute('disabled', 'true');
                 inputDeepseekKey.value = "";
                 inputDeepseekKey.placeholder = "🔒 LOCKED (UPGRADE REQUIRED)";
-                inputDeepseekKey.title = "DEEPSEEK AI ANALYSIS GATED FOR PREMIUM ROLES";
+                inputDeepseekKey.title = "LLM INTEGRATION GATED FOR PREMIUM ROLES";
+                if (inputDeepseekKey.parentElement) inputDeepseekKey.parentElement.classList.add('gated-feature-lock');
             }
         }
+        if (btnLlmSso) {
+            if (hasDeepSeek) btnLlmSso.removeAttribute('disabled');
+            else btnLlmSso.setAttribute('disabled', 'true');
+        }
 
-        // Calculator tab visibility
+        // Advanced Features section gating (webhook & deepseek)
+        const advSection = document.getElementById('advanced_features_section') || document.getElementById('advanced-features-section');
+        if (advSection) {
+            // Show if either webhook or deepseek is enabled for the user
+            const showAdv = !!features.webhook_enabled || !!features.deepseek_enabled;
+            advSection.style.display = showAdv ? '' : 'none';
+        }
         const hasCalculator = !!features.calculator_enabled;
         const navCompound = document.getElementById('nav-compound');
         if (navCompound) {
@@ -533,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Ledger tab visibility / labeling
-        const hasLedger = !!features.ledger_enabled;
+        const hasLedger = isAdmin || !!features.ledger_enabled;
         if (navLedger) {
             const span = navLedger.querySelector('span');
             if (span) {
@@ -563,637 +321,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Logout operation
-    if (btnLogout) {
-        btnLogout.addEventListener('click', async () => {
-            try {
-                const resp = await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
-                if (resp.ok) {
-                    window.location.reload();
-                }
-            } catch (e) {
-                console.error("Logout failed:", e);
-            }
-        });
-    }
-
-    // View Navigation Router
-    const compoundInterestPanel = document.getElementById('compound-interest-panel');
-    const navCompound = document.getElementById('nav-compound');
-
-    if (navDashboard) {
-        navDashboard.addEventListener('click', () => {
-            navDashboard.classList.add('active');
-            if (navAdmin) navAdmin.classList.remove('active');
-            if (navCompound) navCompound.classList.remove('active');
-            if (navLedger) navLedger.classList.remove('active');
-            if (terminalGrid) terminalGrid.style.display = 'grid';
-            if (adminConsolePanel) adminConsolePanel.style.display = 'none';
-            if (compoundInterestPanel) compoundInterestPanel.style.display = 'none';
-        });
-    }
-
-    if (navAdmin) {
-        navAdmin.addEventListener('click', () => {
-            if (currentUser && currentUser.role === 'admin') {
-                navAdmin.classList.add('active');
-                if (navDashboard) navDashboard.classList.remove('active');
-                if (navCompound) navCompound.classList.remove('active');
-                if (navLedger) navLedger.classList.remove('active');
-                if (terminalGrid) terminalGrid.style.display = 'none';
-                if (adminConsolePanel) adminConsolePanel.style.display = 'block';
-                if (compoundInterestPanel) compoundInterestPanel.style.display = 'none';
-                
-                // Reset admin sub-tabs to users view
-                if (adminTabUsers) adminTabUsers.classList.add('active');
-                if (adminTabStats) adminTabStats.classList.remove('active');
-                const adminTabFeatures = document.getElementById('admin-tab-features');
-                if (adminTabFeatures) adminTabFeatures.classList.remove('active');
-
-                if (adminViewUsers) adminViewUsers.style.display = 'block';
-                if (adminViewStats) adminViewStats.style.display = 'none';
-                const adminViewFeatures = document.getElementById('admin-view-features');
-                if (adminViewFeatures) adminViewFeatures.style.display = 'none';
-
-                if (adminSubTitle) adminSubTitle.textContent = 'USER_ROLES';
-                
-                loadAdminUsers();
-            }
-        });
-    }
-
-    if (navCompound) {
-        navCompound.addEventListener('click', () => {
-            const hasCalc = currentUser && currentUser.features && currentUser.features.calculator_enabled;
-            if (!hasCalc) return;
-
-            navCompound.classList.add('active');
-            if (navDashboard) navDashboard.classList.remove('active');
-            if (navAdmin) navAdmin.classList.remove('active');
-            if (navLedger) navLedger.classList.remove('active');
-            if (terminalGrid) terminalGrid.style.display = 'none';
-            if (adminConsolePanel) adminConsolePanel.style.display = 'none';
-            if (compoundInterestPanel) compoundInterestPanel.style.display = 'grid';
-
-            initCompoundCalculator();
-        });
-    }
-
-    if (navLedger) {
-        navLedger.addEventListener('click', () => {
-            const hasLedger = currentUser && currentUser.features && currentUser.features.ledger_enabled;
-            if (!hasLedger) {
-                if (ledgerLockedModal) ledgerLockedModal.style.display = 'flex';
-            } else {
-                alert(currentLang === 'en' 
-                    ? "Trades ledger backend initialized. Interface is prepared for later integration." 
-                    : "Registro de operaciones inicializado. Interfaz preparada para futura integración.");
-            }
-        });
-    }
-
-    if (btnCloseLedgerModal) {
-        btnCloseLedgerModal.addEventListener('click', () => {
-            if (ledgerLockedModal) ledgerLockedModal.style.display = 'none';
-        });
-    }
-    if (btnCloseLedgerModalOk) {
-        btnCloseLedgerModalOk.addEventListener('click', () => {
-            if (ledgerLockedModal) ledgerLockedModal.style.display = 'none';
-        });
-    }
-
-    // Bind Admin sub-tabs
-    const adminTabFeatures = document.getElementById('admin-tab-features');
-    const adminViewFeatures = document.getElementById('admin-view-features');
-
-    if (adminTabUsers) {
-        adminTabUsers.addEventListener('click', () => {
-            adminTabUsers.classList.add('active');
-            if (adminTabStats) adminTabStats.classList.remove('active');
-            if (adminTabFeatures) adminTabFeatures.classList.remove('active');
-            if (adminViewUsers) adminViewUsers.style.display = 'block';
-            if (adminViewStats) adminViewStats.style.display = 'none';
-            if (adminViewFeatures) adminViewFeatures.style.display = 'none';
-            if (adminSubTitle) adminSubTitle.textContent = 'USER_ROLES';
-            loadAdminUsers();
-        });
-    }
+    // Initialize on authReady event
+    window.addEventListener('authReady', (e) => {
+        currentUser = e.detail;
+        applyRoleGates();
+        initSystem();
+    });
     
-    if (adminTabStats) {
-        adminTabStats.addEventListener('click', () => {
-            adminTabStats.classList.add('active');
-            if (adminTabUsers) adminTabUsers.classList.remove('active');
-            if (adminTabFeatures) adminTabFeatures.classList.remove('active');
-            if (adminViewUsers) adminViewUsers.style.display = 'none';
-            if (adminViewStats) adminViewStats.style.display = 'block';
-            if (adminViewFeatures) adminViewFeatures.style.display = 'none';
-            if (adminSubTitle) adminSubTitle.textContent = 'SYSTEM_DIAGNOSTICS';
-            loadAdminStats();
-        });
-    }
-
-    if (adminTabFeatures) {
-        adminTabFeatures.addEventListener('click', () => {
-            adminTabFeatures.classList.add('active');
-            if (adminTabUsers) adminTabUsers.classList.remove('active');
-            if (adminTabStats) adminTabStats.classList.remove('active');
-            if (adminViewUsers) adminViewUsers.style.display = 'none';
-            if (adminViewStats) adminViewStats.style.display = 'none';
-            if (adminViewFeatures) adminViewFeatures.style.display = 'block';
-            if (adminSubTitle) adminSubTitle.textContent = 'ROLE_FEATURE_FLAGS';
-            loadAdminFeatures();
-        });
-    }
-
-    // Load Admin Panel Users Database
-    async function loadAdminUsers() {
-        if (!adminUsersTableBody) return;
-        
-        adminUsersTableBody.innerHTML = `
-            <tr>
-                <td colspan="5" class="table-placeholder">Loading users database...</td>
-            </tr>`;
-            
-        try {
-            const resp = await fetch(`${API_BASE}/api/admin/users`);
-            if (resp.ok) {
-                const users = await resp.json();
-                
-                if (users.length === 0) {
-                    adminUsersTableBody.innerHTML = `
-                        <tr>
-                            <td colspan="5" class="table-placeholder">No registered users in database.</td>
-                        </tr>`;
-                    return;
-                }
-                
-                adminUsersTableBody.innerHTML = '';
-                users.forEach(user => {
-                    const row = document.createElement('tr');
-                    
-                    const isSelf = user.email === currentUser.email || user.id === currentUser.id;
-                    const roles = ['admin', 'black_diamond', 'premium', 'user'];
-                    const optionsHTML = roles.map(r => `
-                        <option value="${r}" ${user.role === r ? 'selected' : ''} ${isSelf && r !== 'admin' ? 'disabled' : ''}>
-                            ${r.replace('_', ' ').toUpperCase()}
-                        </option>
-                    `).join('');
-                    
-                    const isConfirmed = user.email_confirmed === 1;
-                    const verifiedBadgeHTML = isConfirmed
-                        ? '<span class="badge badge-watching" style="font-size: 8px; padding: 1px 4px; margin-left: 5px;">VERIFIED</span>'
-                        : '<span class="badge badge-coiling" style="font-size: 8px; padding: 1px 4px; margin-left: 5px;">UNVERIFIED</span>';
-                        
-                    const date = new Date(user.created_at || Date.now());
-                    const dateFormatted = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    
-                    row.innerHTML = `
-                        <td>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <img src="${user.picture || 'https://api.dicebear.com/7.x/bottts/svg?seed=default'}" style="width:20px; height:20px; border-radius:50%; background:#fff; border:1px solid var(--border-color);">
-                                <strong>${user.name}</strong> ${isSelf ? '<span class="text-dim">(YOU)</span>' : ''}
-                            </div>
-                        </td>
-                        <td>
-                            <div>
-                                <span>${user.email}</span>
-                                <div><small style="color:var(--text-dim); font-size:10px; font-family:monospace;">ID: ${user.id}</small>${verifiedBadgeHTML}</div>
-                            </div>
-                        </td>
-                        <td>
-                            <div style="display:flex; flex-direction:column; gap:4px;">
-                                <span class="badge badge-${user.role}" style="font-size: 9px; padding: 2px 6px; width: fit-content;">${user.role.replace('_', ' ').toUpperCase()}</span>
-                                <select class="admin-role-select" data-user-id="${user.id}" ${isSelf ? 'disabled' : ''} style="margin-top:2px;">
-                                    ${optionsHTML}
-                                </select>
-                            </div>
-                        </td>
-                        <td>${dateFormatted}</td>
-                        <td>
-                            <div style="display:flex; gap:5px;">
-                                <button class="btn btn-xs ${isConfirmed ? 'btn-outline-red' : 'btn-outline-green'} btn-toggle-verify" data-user-id="${user.id}" data-confirmed="${user.email_confirmed}">
-                                    ${isConfirmed ? 'UNVERIFY' : 'VERIFY'}
-                                </button>
-                                <button class="btn btn-xs btn-outline-blue btn-admin-reset-pw" data-user-id="${user.id}">
-                                    RESET PW
-                                </button>
-                                <button class="btn btn-xs btn-outline-red btn-admin-delete" data-user-id="${user.id}" ${isSelf ? 'disabled' : ''}>
-                                    DELETE
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    
-                    // Bind change listener for role update
-                    const select = row.querySelector('.admin-role-select');
-                    if (select) {
-                        select.addEventListener('change', async (e) => {
-                            const newRole = e.target.value;
-                            await updateUserRole(user.id, newRole);
-                        });
-                    }
-
-                    // Bind verification toggle
-                    const verifyBtn = row.querySelector('.btn-toggle-verify');
-                    if (verifyBtn) {
-                        verifyBtn.addEventListener('click', async () => {
-                            const currentVal = parseInt(verifyBtn.dataset.confirmed) === 1;
-                            const newVal = !currentVal;
-                            try {
-                                const actionText = newVal ? "confirm" : "unconfirm";
-                                const confirmResp = await fetch(`${API_BASE}/api/admin/users/${user.id}/confirm`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ confirm: newVal })
-                                });
-                                if (confirmResp.ok) {
-                                    appendConsoleLine(`[SYSTEM] Manual verification updated for ${user.email} (${actionText.toUpperCase()}).`, 'line-success');
-                                    loadAdminUsers();
-                                } else {
-                                    appendConsoleLine(`[SYSTEM] Failed to toggle verification status for ${user.email}.`, 'line-error');
-                                }
-                            } catch (err) {
-                                appendConsoleLine(`[SYSTEM] Manual verification update error: ${err.message}`, 'line-error');
-                            }
-                        });
-                    }
-
-                    // Bind reset password
-                    const resetBtn = row.querySelector('.btn-admin-reset-pw');
-                    if (resetBtn) {
-                        resetBtn.addEventListener('click', async () => {
-                            const newPw = prompt(`Enter new password for ${user.name} (${user.email}):`);
-                            if (newPw === null) return; // Cancelled
-                            if (newPw.trim() === '') {
-                                alert("Password cannot be empty!");
-                                return;
-                            }
-                            try {
-                                const resetResp = await fetch(`${API_BASE}/api/admin/users/${user.id}/reset-password`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ password: newPw })
-                                });
-                                if (resetResp.ok) {
-                                    appendConsoleLine(`[SYSTEM] Password reset for user ${user.email} successful.`, 'line-success');
-                                    alert(`Password reset successful for ${user.email}`);
-                                } else {
-                                    const errJson = await resetResp.json();
-                                    appendConsoleLine(`[SYSTEM] Password reset failed for ${user.email}: ${errJson.detail}`, 'line-error');
-                                }
-                            } catch (err) {
-                                appendConsoleLine(`[SYSTEM] Admin password reset error: ${err.message}`, 'line-error');
-                            }
-                        });
-                    }
-
-                    // Bind delete user
-                    const deleteBtn = row.querySelector('.btn-admin-delete');
-                    if (deleteBtn) {
-                        deleteBtn.addEventListener('click', async () => {
-                            if (!confirm(`Are you sure you want to permanently delete user ${user.name} (${user.email})? This action is irreversible.`)) {
-                                return;
-                            }
-                            try {
-                                const delResp = await fetch(`${API_BASE}/api/admin/users/${user.id}`, {
-                                    method: 'DELETE'
-                                });
-                                if (delResp.ok) {
-                                    appendConsoleLine(`[SYSTEM] User ${user.email} deleted successfully.`, 'line-warn');
-                                    loadAdminUsers();
-                                } else {
-                                    appendConsoleLine(`[SYSTEM] Failed to delete user ${user.email}.`, 'line-error');
-                                }
-                            } catch (err) {
-                                appendConsoleLine(`[SYSTEM] Delete user error: ${err.message}`, 'line-error');
-                            }
-                        });
-                    }
-                    
-                    adminUsersTableBody.appendChild(row);
-                });
-            }
-        } catch (e) {
-            console.error("Failed to load admin users:", e);
-            adminUsersTableBody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="table-placeholder text-red">Error loading users.</td>
-                </tr>`;
-        }
-    }
-
-    async function updateUserRole(userId, newRole) {
-        try {
-            const resp = await fetch(`${API_BASE}/api/admin/users/${userId}/role`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role: newRole })
-            });
-            
-            if (resp.ok) {
-                appendConsoleLine(`[SYSTEM] Role for user ID ${userId} updated to ${newRole.toUpperCase()} successfully.`, 'line-success');
-                loadAdminUsers();
-            } else {
-                appendConsoleLine(`[SYSTEM] Failed to update role for user ID ${userId}.`, 'line-error');
-            }
-        } catch (e) {
-            appendConsoleLine(`[SYSTEM] Error updating user role: ${e.message}`, 'line-error');
-        }
-    }
-
-    async function loadAdminStats() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/admin/system-stats`);
-            if (resp.ok) {
-                const stats = await resp.json();
-                if (statTotalUsers) statTotalUsers.textContent = stats.total_users;
-                if (statActiveSessions) statActiveSessions.textContent = stats.active_sessions;
-                if (statMonitoredPairs) statMonitoredPairs.textContent = stats.monitored_pairs;
-                if (statAlertsDispatched) statAlertsDispatched.textContent = stats.alerts_dispatched;
-            }
-        } catch (e) {
-            console.error("Failed to load admin stats:", e);
-        }
-    }
-
-    // Theme Management
-    function initTheme() {
-        const savedTheme = localStorage.getItem('theme') || 'dark';
-        if (btnThemeToggle) {
-            if (savedTheme === 'light') {
-                document.body.classList.add('light-mode');
-                btnThemeToggle.innerHTML = '<i class="fa-solid fa-sun"></i>';
-            } else {
-                document.body.classList.remove('light-mode');
-                btnThemeToggle.innerHTML = '<i class="fa-solid fa-moon"></i>';
-            }
-        }
-    }
-
-    if (btnThemeToggle) {
-        btnThemeToggle.addEventListener('click', () => {
-            const isLight = document.body.classList.toggle('light-mode');
-            if (isLight) {
-                localStorage.setItem('theme', 'light');
-                btnThemeToggle.innerHTML = '<i class="fa-solid fa-sun"></i>';
-            } else {
-                localStorage.setItem('theme', 'dark');
-                btnThemeToggle.innerHTML = '<i class="fa-solid fa-moon"></i>';
-            }
-            
-            // Reload chart to apply theme
-            const currentTicker = document.getElementById('current-chart-ticker');
-            if (currentTicker && currentTicker.innerText !== 'NONE') {
-                loadTradingViewChart(currentTicker.innerText);
-            }
-        });
-    }
-
-    // Language / Localization Management
-    const translations = {
-        en: {
-            SYSTEM_STATUS: "SYSTEM_STATUS",
-            TRACKED_PAIRS: "TRACKED_PAIRS",
-            RATE_LIMIT: "RATE_LIMIT",
-            CONTROL_DECK: "CONTROL_DECK",
-            START_SCANNER: "START SCANNER",
-            STOP_SCANNER: "STOP SCANNER",
-            WEBHOOK_ALERT_URL: "WEBHOOK_ALERT_URL",
-            EXCHANGES: "EXCHANGES",
-            INSTRUMENTS: "INSTRUMENTS",
-            SCAN_INTERVAL: "SCAN_INTERVAL (SEC)",
-            MAX_PAIRS_TRACKED: "MAX_PAIRS_TRACKED",
-            VOL_MULTIPLIER_GATE: "VOL_MULTIPLIER_GATE",
-            PRICE_VELOCITY_GATE: "PRICE_VELOCITY_GATE",
-            SAVE_CONFIGURATION: "SAVE_CONFIGURATION",
-            INTELLIGENCE_SIMULATOR: "INTELLIGENCE_SIMULATOR",
-            SIMULATOR_SUBTEXT: "Trigger a mock Stage 3 breakout to test alerts, metrics calculations, and webhook payload routing.",
-            FIRE_SIMULATED_ALERT: "FIRE SIMULATED ALERT",
-            BREAKOUT_RADAR: "BREAKOUT_RADAR",
-            DISCOVERY: "DISCOVERY",
-            GATING_SCAN: "GATING_SCAN",
-            ENRICHMENT: "ENRICHMENT",
-            DISPATCH: "DISPATCH",
-            ACTIVE_BREAKOUTS_HEADER: "ACTIVE_BREAKOUT_ALERTS (SCORE ≥ 65/100)",
-            NO_ACTIVE_BREAKOUTS: "NO ACTIVE BREAKOUTS DETECTED",
-            AWAITING_BREAKOUTS: "Awaiting Stage 2 breakout metrics...",
-            LIVE_WATCHLIST: "LIVE_WATCHLIST",
-            FILTER_TICKER_PLACEHOLDER: "FILTER TICKER...",
-            SYMBOL: "SYMBOL",
-            PRICE: "PRICE",
-            VOL_MULT: "VOL_MULT",
-            VELOCITY: "VELOCITY (10m)",
-            STATUS: "STATUS",
-            SYSTEM_LOGS: "SYSTEM_LOGS",
-            LIVE_CHART: "LIVE CHART",
-            CHART_PLACEHOLDER: "Select a ticker from the watchlist to display its live chart.",
-            DEEPSEEK_API_KEY: "DEEPSEEK_API_KEY (OPTIONAL)",
-            ACCUM_RADAR: "ACCUM_RADAR",
-            ACCUM_RADAR_TITLE: "ACCUM_RADAR",
-            ACCUM_SUBTEXT: "Detecting pre-pump accumulation patterns before breakout develops.",
-            FIRE_ACCUM_SIM: "SIMULATE ACCUM",
-            ACCUM_EMPTY: "No accumulation patterns detected yet.",
-            ACCUM_EMPTY_SUB: "Stage 0 radar scanning on each cycle...",
-            ADMIN_CONSOLE: "ADMIN CONSOLE",
-
-            // Compound calculator strings
-            COMPOUND_INTEREST: "COMPOUND INTEREST",
-            INVESTMENT_SETTINGS: "INVESTMENT SETTINGS",
-            ASSET_CLASS: "ASSET CLASS",
-            STOCKS: "STOCKS",
-            CRYPTO: "CRYPTO",
-            REAL_ESTATE: "REAL ESTATE",
-            SAVINGS: "SAVINGS",
-            CUSTOM: "CUSTOM",
-            INITIAL_PRINCIPAL: "INITIAL PRINCIPAL",
-            MONTHLY_CONTRIBUTION: "MONTHLY CONTRIBUTION",
-            ANNUAL_RETURN: "ANNUAL RETURN",
-            INFLATION_RATE: "INFLATION RATE",
-            COMPOUND_FREQUENCY: "COMPOUND FREQUENCY",
-            ANNUALLY: "ANNUALLY",
-            QUARTERLY: "QUARTERLY",
-            MONTHLY_FREQ: "MONTHLY",
-            WEEKLY: "WEEKLY",
-            DAILY: "DAILY",
-            TIME_HORIZON: "TIME HORIZON",
-            YEARS: "YEARS",
-            CALCULATE_GROWTH: "CALCULATE GROWTH",
-            GROWTH_PROJECTIONS: "GROWTH PROJECTIONS",
-            TOTAL_BALANCE: "TOTAL BALANCE",
-            TOTAL_INTEREST: "TOTAL INTEREST",
-            REAL_VALUE_ADJ: "REAL VALUE (ADJ. INFLATION)",
-            INSPECT_YEAR_PROJECTION: "INSPECT YEAR PROJECTION",
-            PRINCIPAL: "PRINCIPAL",
-            CONTRIBUTIONS: "CONTRIBUTIONS",
-            INTEREST_GAINS: "INTEREST / GAINS",
-            TOTAL_BALANCE_ABBR: "TOTAL BAL",
-            REAL_VALUE_ABBR: "REAL VAL",
-            YEAR_BY_YEAR_BREAKDOWN: "YEAR-BY-YEAR BREAKDOWN",
-            YEAR: "YEAR",
-            INTEREST: "INTEREST",
-            REAL_VALUE: "REAL VALUE",
-            
-            // Tooltips
-            TOOLTIP_WEBHOOK_URL: "Target URL to dispatch JSON alerts when a pump score matches or exceeds the threshold.",
-            TOOLTIP_DEEPSEEK_KEY: "Input your DeepSeek API key to activate the AI Agent Decision Layer. If left empty, local heuristics will evaluate breakouts.",
-            TOOLTIP_EXCHANGES: "Select the API liquidity pools to source assets from.",
-            TOOLTIP_INSTRUMENTS: "Target spot exchange books or futures leverage swaps contracts.",
-            TOOLTIP_INTERVAL: "Refresh cooldown period between active scanning cycles.",
-            TOOLTIP_MAX_PAIRS: "Limit discoverable pairs sorted by 24h volume to focus processing bandwidth.",
-            TOOLTIP_VOL_MULT: "How many times the current 5m candle volume must exceed the average volume of the previous 49 candles.",
-            TOOLTIP_PRICE_VEL: "The minimum price gain percentage over the last 2 periods (10 minutes) to trigger breakout status.",
-            TOOLTIP_PRINCIPAL: "The starting amount of your investment.",
-            TOOLTIP_CONTRIBUTION: "The regular amount you add to the investment every month.",
-            TOOLTIP_RETURN: "The expected average annual rate of return on your investment.",
-            TOOLTIP_INFLATION: "The expected rate of price increases over time. Decreases purchasing power.",
-            TOOLTIP_FREQUENCY: "How often interest is calculated and added to your balance.",
-            TOOLTIP_HORIZON: "The total number of years you plan to keep your money invested."
-        },
-        es: {
-            SYSTEM_STATUS: "ESTADO_SISTEMA",
-            TRACKED_PAIRS: "PARES_RASTREADOS",
-            RATE_LIMIT: "LIMITE_VELOCIDAD",
-            CONTROL_DECK: "PANEL_CONTROL",
-            START_SCANNER: "INICIAR ESCANER",
-            STOP_SCANNER: "DETENER ESCANER",
-            WEBHOOK_ALERT_URL: "URL_ALERTA_WEBHOOK",
-            EXCHANGES: "EXCHANGES",
-            INSTRUMENTS: "INSTRUMENTOS",
-            SCAN_INTERVAL: "INTERVALO_ESCANEO (SEG)",
-            MAX_PAIRS_TRACKED: "MAX_PARES_SEGUIDOS",
-            VOL_MULTIPLIER_GATE: "COMPENSACION_VOLUMEN",
-            PRICE_VELOCITY_GATE: "COMPENSACION_PRECIO",
-            SAVE_CONFIGURATION: "GUARDAR_CONFIGURACION",
-            INTELLIGENCE_SIMULATOR: "SIMULADOR_INTELIGENCIA",
-            SIMULATOR_SUBTEXT: "Active una ruptura simulada de la Etapa 3 para probar alertas, cálculos de métricas y enrutamiento de carga de webhook.",
-            FIRE_SIMULATED_ALERT: "DISPARAR ALERTA SIMULADA",
-            BREAKOUT_RADAR: "RADAR_RUPTURAS",
-            DISCOVERY: "DESCUBRIMIENTO",
-            GATING_SCAN: "ESCANEO_FILTRADO",
-            ENRICHMENT: "ENRIQUECIMIENTO",
-            DISPATCH: "DESPACHO",
-            ACTIVE_BREAKOUTS_HEADER: "ALERTAS DE RUPTURA ACTIVA (PUNTAJE ≥ 65/100)",
-            NO_ACTIVE_BREAKOUTS: "NO SE DETECTARON RUPTURAS ACTIVAS",
-            AWAITING_BREAKOUTS: "Esperando métricas de ruptura de la Etapa 2...",
-            LIVE_WATCHLIST: "LISTA_SEGUIMIENTO_VIVO",
-            FILTER_TICKER_PLACEHOLDER: "FILTRAR PAR...",
-            SYMBOL: "SIMBOLO",
-            PRICE: "PRECIO",
-            VOL_MULT: "MULT_VOL",
-            VELOCITY: "VELOCIDAD (10m)",
-            STATUS: "ESTADO",
-            SYSTEM_LOGS: "REGISTROS_SISTEMA",
-            LIVE_CHART: "GRÁFICO EN VIVO",
-            CHART_PLACEHOLDER: "Seleccione un par de la lista para mostrar su gráfico en vivo.",
-            DEEPSEEK_API_KEY: "CLAVE_API_DEEPSEEK (OPCIONAL)",
-            ACCUM_RADAR: "RADAR_ACUM",
-            ACCUM_RADAR_TITLE: "RADAR_ACUMULACION",
-            ACCUM_SUBTEXT: "Detectando patrones de acumulación pre-pump antes del movimiento.",
-            FIRE_ACCUM_SIM: "SIMULAR ACUM",
-            ACCUM_EMPTY: "No se detectaron patrones de acumulación.",
-            ACCUM_EMPTY_SUB: "Radar Etapa 0 activo en cada ciclo...",
-            ADMIN_CONSOLE: "CONSOLA DE ADMIN",
-
-            // Compound calculator strings
-            COMPOUND_INTEREST: "INTERÉS COMPUESTO",
-            INVESTMENT_SETTINGS: "CONFIGURACIÓN DE INVERSIÓN",
-            ASSET_CLASS: "CLASE DE ACTIVO",
-            STOCKS: "ACCIONES",
-            CRYPTO: "CRIPTO",
-            REAL_ESTATE: "BIENES RAÍCES",
-            SAVINGS: "AHORROS",
-            CUSTOM: "PERSONALIZADO",
-            INITIAL_PRINCIPAL: "PRINCIPAL INICIAL",
-            MONTHLY_CONTRIBUTION: "CONTRIBUCIÓN MENSUAL",
-            ANNUAL_RETURN: "RETORNO ANUAL",
-            INFLATION_RATE: "TASA DE INFLACIÓN",
-            COMPOUND_FREQUENCY: "FRECUENCIA DE COMPOSICIÓN",
-            ANNUALLY: "ANUALMENTE",
-            QUARTERLY: "TRIMESTRALMENTE",
-            MONTHLY_FREQ: "MENSUALMENTE",
-            WEEKLY: "SEMANALMENTE",
-            DAILY: "DIARIAMENTE",
-            TIME_HORIZON: "HORIZONTE DE TIEMPO",
-            YEARS: "AÑOS",
-            CALCULATE_GROWTH: "CALCULAR CRECIMIENTO",
-            GROWTH_PROJECTIONS: "PROYECCIONES DE CRECIMIENTO",
-            TOTAL_BALANCE: "SALDO TOTAL",
-            TOTAL_INTEREST: "INTERÉS TOTAL",
-            REAL_VALUE_ADJ: "VALOR REAL (AJUSTADO POR INFLACIÓN)",
-            INSPECT_YEAR_PROJECTION: "INSPECCIONAR PROYECCIÓN DE AÑO",
-            PRINCIPAL: "CAPITAL",
-            CONTRIBUTIONS: "CONTRIBUCIONES",
-            INTEREST_GAINS: "INTERESES / GANANCIAS",
-            TOTAL_BALANCE_ABBR: "BAL TOTAL",
-            REAL_VALUE_ABBR: "VAL REAL",
-            YEAR_BY_YEAR_BREAKDOWN: "DESGLOSE AÑO POR AÑO",
-            YEAR: "AÑO",
-            INTEREST: "INTERÉS",
-            REAL_VALUE: "VALOR REAL",
-            
-            // Tooltips
-            TOOLTIP_WEBHOOK_URL: "URL del servidor de destino para recibir cargas útiles de alertas JSON en tiempo real cuando se alcancen los umbrales de bombeo.",
-            TOOLTIP_DEEPSEEK_KEY: "Ingrese su clave API de DeepSeek para activar la Capa de Decisión del Agente de IA. Si se deja vacío, las heurísticas locales evaluarán las rupturas.",
-            TOOLTIP_EXCHANGES: "Seleccione los libros de mercado de intercambio centralizados o descentralizados para consultar en el descubrimiento.",
-            TOOLTIP_INSTRUMENTS: "Seleccione libros de divisas al contado o contratos de permuta financiera de futuros perpetuos para el escaneo.",
-            TOOLTIP_INTERVAL: "Segundos de espera entre ciclos de escaneo consecutivos. Los valores más bajos escanean más rápido pero aumentan el riesgo de límite de velocidad.",
-            TOOLTIP_MAX_PAIRS: "Limite el número de pares de mayor volumen obtenidos de la fase de descubrimiento para concentrar el ancho de banda de escaneo.",
-            TOOLTIP_VOL_MULT: "Factor de umbral para activar rupturas. El volumen actual de la vela de 5m debe superar el promedio de las últimas 49 velas por este multiplicador.",
-            TOOLTIP_PRICE_VEL: "Ganancia porcentual mínima de precio en las últimas dos velas (10 minutos en total) para activar una ruptura técnica.",
-            TOOLTIP_PRINCIPAL: "El capital inicial de su inversión.",
-            TOOLTIP_CONTRIBUTION: "La cantidad regular que agrega a la inversión cada mes.",
-            TOOLTIP_RETURN: "La tasa de rendimiento anual promedio esperada para su inversión.",
-            TOOLTIP_INFLATION: "La tasa de aumento de precios esperada. Disminuye el poder adquisitivo.",
-            TOOLTIP_FREQUENCY: "Con qué frecuencia se calculan y se agregan los intereses a su saldo.",
-            TOOLTIP_HORIZON: "El número total de años que planea mantener su dinero invertido."
-        }
-    };
-
-    let currentLang = localStorage.getItem('lang') || 'en';
-
-    function applyTranslations() {
-        // Translate elements with data-translate attribute
-        document.querySelectorAll('[data-translate]').forEach(el => {
-            const key = el.getAttribute('data-translate');
-            if (translations[currentLang] && translations[currentLang][key]) {
-                el.innerText = translations[currentLang][key];
-            }
-        });
-
-        // Translate placeholders
-        document.querySelectorAll('[data-translate-placeholder]').forEach(el => {
-            const key = el.getAttribute('data-translate-placeholder');
-            if (translations[currentLang] && translations[currentLang][key]) {
-                el.placeholder = translations[currentLang][key];
-            }
-        });
-
-        // Toggle UI language button text representation
-        if (btnLangToggle) {
-            const span = btnLangToggle.querySelector('span');
-            if (span) {
-                span.innerText = currentLang === 'en' ? 'ES' : 'EN';
-            } else {
-                btnLangToggle.innerText = currentLang === 'en' ? 'ES' : 'EN';
-            }
-        }
-        
-        // Re-render components with translated dynamic text
-        renderWatchlist();
-    }
-
-    if (btnLangToggle) {
-        btnLangToggle.addEventListener('click', () => {
-            currentLang = currentLang === 'en' ? 'es' : 'en';
-            localStorage.setItem('lang', currentLang);
-            applyTranslations();
-            
-            // Reload chart to apply language
-            const currentTicker = document.getElementById('current-chart-ticker');
-            if (currentTicker && currentTicker.innerText !== 'NONE') {
-                loadTradingViewChart(currentTicker.innerText);
-            }
-        });
+    if (commonUser) {
+        currentUser = commonUser;
+        applyRoleGates();
+        initSystem();
     }
 
     // -------------------------------------------------------------------------- //
@@ -1352,10 +490,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Sync form values (if not focused)
-        if (document.activeElement.tagName !== 'INPUT') {
-            inputWebhookUrl.value = status.settings.webhook_url || '';
-            if (inputDeepseekKey) {
-                inputDeepseekKey.value = status.settings.deepseek_api_key || '';
+        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'SELECT') {
+            // Only sync values for enabled features
+            const userFeatures = currentUser && currentUser.features ? currentUser.features : {};
+            if (userFeatures.webhook_enabled) {
+                inputWebhookUrl.value = status.settings.webhook_url || '';
+            }
+            const selectLlmProvider = document.getElementById('select-llm-provider');
+            if (selectLlmProvider) {
+                selectLlmProvider.value = status.settings.llm_provider || 'deepseek';
+            }
+            if (inputDeepseekKey && userFeatures.deepseek_enabled) {
+                inputDeepseekKey.value = status.settings.llm_api_key || '';
             }
             
             chkExchangeBinance.checked = status.settings.exchanges.includes('binance');
@@ -1461,7 +607,13 @@ document.addEventListener('DOMContentLoaded', () => {
             row.addEventListener('click', () => {
                 document.querySelectorAll('#watchlist-table-body tr').forEach(r => r.classList.remove('selected-row'));
                 row.classList.add('selected-row');
-                loadTradingViewChart(item.symbol);
+                loadAITradeIdea(item.symbol, "breakout", {
+                    price: item.price,
+                    volume_multiplier: item.volume_multiplier,
+                    price_velocity_2vec: item.price_change_2vec,
+                    open_interest_delta_pct: 5.0,
+                    vader_sentiment_score: 0.75
+                });
             });
 
             row.innerHTML = `
@@ -1481,48 +633,88 @@ document.addEventListener('DOMContentLoaded', () => {
         return price.toFixed(6);
     }
 
-    function loadTradingViewChart(symbol) {
-        const titleEl = document.getElementById('current-chart-ticker');
-        if (titleEl) {
-            titleEl.innerText = symbol;
+    let selectedTicker = null;
+    let selectedSignalType = null;
+    let selectedMetrics = null;
+    let selectedLlmTab = 'gemini';
+
+    async function loadAITradeIdea(symbol, signalType, metrics) {
+        selectedTicker = symbol;
+        selectedSignalType = signalType;
+        selectedMetrics = metrics;
+
+        const currentIdeasTicker = document.getElementById('current-ideas-ticker');
+        const ideasPlaceholder = document.getElementById('ideas-placeholder');
+        const ideasLoading = document.getElementById('ideas-loading');
+        const ideasLocked = document.getElementById('ideas-locked');
+        const ideasMainBody = document.getElementById('ideas-main-body');
+
+        if (currentIdeasTicker) {
+            currentIdeasTicker.innerText = `${symbol} (${signalType.toUpperCase()})`;
         }
 
-        let cleanSymbol = symbol.split(':')[0];
-        let parts = cleanSymbol.split('/');
-        let base = parts[0] ? parts[0].toUpperCase() : '';
-        let quote = parts[1] ? parts[1].toUpperCase() : '';
-        
-        if (!quote) quote = 'USDT';
-        let tvSymbol = `BINANCE:${base}${quote}`;
-        
-        const isLight = document.body.classList.contains('light-mode');
-        const container = document.getElementById('tv-chart-container');
-        if (container) {
-            container.innerHTML = '';
+        if (ideasPlaceholder) ideasPlaceholder.style.display = 'none';
+        if (ideasLocked) ideasLocked.style.display = 'none';
+        if (ideasMainBody) ideasMainBody.style.display = 'none';
+        if (ideasLoading) ideasLoading.style.display = 'flex';
+
+        try {
+            const hasLlmAccess = currentUser && currentUser.features && currentUser.features.deepseek_enabled;
             
-            if (window.TradingView) {
-                new TradingView.widget({
-                    "width": "100%",
-                    "height": "100%",
-                    "symbol": tvSymbol,
-                    "interval": "5",
-                    "timezone": "Etc/UTC",
-                    "theme": isLight ? "light" : "dark",
-                    "style": "1",
-                    "locale": currentLang === 'en' ? "en" : "es",
-                    "toolbar_bg": isLight ? "#f1f3f6" : "#101622",
-                    "enable_publishing": false,
-                    "hide_side_toolbar": true,
-                    "allow_symbol_change": true,
-                    "container_id": "tv-chart-container"
-                });
-            } else {
-                container.innerHTML = `
-                    <div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--red); font-family:var(--font-mono); font-size:11px;">
-                        TradingView widget library load failure. Check Internet connection.
-                    </div>
-                `;
+            if (!hasLlmAccess) {
+                if (ideasLoading) ideasLoading.style.display = 'none';
+                if (ideasLocked) ideasLocked.style.display = 'block';
+                return;
             }
+
+            const payload = {
+                ticker: symbol,
+                signal_type: signalType,
+                metrics: metrics,
+                provider: selectedLlmTab
+            };
+
+            const resp = await fetch(`${API_BASE}/api/generate_trade_idea`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (resp.ok) {
+                const result = await resp.json();
+                
+                if (ideasLoading) ideasLoading.style.display = 'none';
+                if (ideasMainBody) ideasMainBody.style.display = 'flex';
+
+                const dirEl = document.getElementById('idea-val-direction');
+                if (dirEl) {
+                    dirEl.innerText = result.direction || 'BUY';
+                    dirEl.className = result.direction === 'SELL' ? 'box-value text-red' : 'box-value text-green';
+                    dirEl.style.color = result.direction === 'SELL' ? 'var(--red)' : 'var(--green)';
+                }
+
+                const convEl = document.getElementById('idea-val-conviction');
+                if (convEl) convEl.innerText = `${result.conviction_score}%`;
+
+                const tgtEl = document.getElementById('idea-val-target');
+                if (tgtEl) tgtEl.innerText = `$${formatPrice(result.target_price)}`;
+
+                const stopEl = document.getElementById('idea-val-stop');
+                if (stopEl) stopEl.innerText = `$${formatPrice(result.stop_loss)}`;
+
+                const expEl = document.getElementById('idea-text-explanation');
+                if (expEl) expEl.innerText = currentLang === 'en' ? result.reasoning_en : result.reasoning_es;
+
+                const setEl = document.getElementById('idea-text-setup');
+                if (setEl) setEl.innerText = currentLang === 'en' ? result.setup_en : result.setup_es;
+            } else {
+                if (ideasLoading) ideasLoading.style.display = 'none';
+                if (ideasLocked) ideasLocked.style.display = 'block';
+            }
+        } catch (e) {
+            console.error("Error generating trade idea:", e);
+            if (ideasLoading) ideasLoading.style.display = 'none';
+            if (ideasPlaceholder) ideasPlaceholder.style.display = 'flex';
         }
     }
 
@@ -1711,6 +903,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Prepend card to Alerts container
         alertsFeedContainer.insertBefore(card, alertsFeedContainer.firstChild);
 
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', () => {
+            loadAITradeIdea(alertData.ticker, "breakout", alertData.metrics);
+        });
+
         // Keep alerts to maximum of 25 items
         if (alertsFeedContainer.children.length > 25) {
             alertsFeedContainer.removeChild(alertsFeedContainer.lastChild);
@@ -1800,9 +997,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const selectLlmProvider = document.getElementById('select-llm-provider');
         const settings = {
             webhook_url: inputWebhookUrl.value.trim(),
             deepseek_api_key: inputDeepseekKey ? inputDeepseekKey.value.trim() : "",
+            llm_provider: selectLlmProvider ? selectLlmProvider.value : "deepseek",
+            llm_api_key: inputDeepseekKey ? inputDeepseekKey.value.trim() : "",
             interval_sec: parseInt(inputIntervalSec.value),
             volume_multiplier: parseFloat(inputVolumeThreshold.value),
             price_velocity_pct: parseFloat(inputPriceThreshold.value),
@@ -1851,6 +1051,133 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // FILTER WATCHLIST
     inputSearchPairs.addEventListener('input', renderWatchlist);
+
+    // SSO LOGIN BUTTON SIMULATION
+    const btnLlmSso = document.getElementById('btn-llm-sso');
+    const btnLockSsoLogin = document.getElementById('btn-lock-sso-login');
+
+    function openSSOModal(provider) {
+        const modal = document.createElement('div');
+        modal.className = 'sso-modal-overlay';
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100vw';
+        modal.style.height = '100vh';
+        modal.style.background = 'rgba(0,0,0,0.85)';
+        modal.style.backdropFilter = 'blur(6px)';
+        modal.style.display = 'flex';
+        modal.style.alignItems = 'center';
+        modal.style.justifyContent = 'center';
+        modal.style.zIndex = '99999';
+        modal.style.fontFamily = 'var(--font-mono)';
+
+        const logoIcon = provider === 'gemini' ? 'fa-sparkles text-cyan' :
+                         provider === 'claude' ? 'fa-feather text-orange' :
+                         provider === 'chatgpt' ? 'fa-bolt text-green' : 'fa-robot text-purple';
+
+        modal.innerHTML = `
+            <div class="sso-modal-card" style="background:var(--bg-card); border:1px solid var(--cyan); box-shadow: 0 0 20px rgba(0, 240, 255, 0.2); padding:30px; border-radius:6px; max-width:400px; width:90%; text-align:center; position:relative;">
+                <div style="font-size:48px; margin-bottom:15px;"><i class="fa-solid ${logoIcon}"></i></div>
+                <h3 style="color:var(--text-primary); margin-bottom:10px; font-size:14px; text-transform:uppercase; letter-spacing:1px;">${provider.toUpperCase()} SSO LOGIN</h3>
+                <div id="sso-step-text" style="color:var(--cyan); font-size:10px; margin-bottom:20px;">Initializing connection...</div>
+                
+                <div class="progress-bar-container" style="background:rgba(255,255,255,0.05); height:4px; border-radius:2px; overflow:hidden; margin-bottom:20px;">
+                    <div id="sso-progress" style="background:var(--cyan); width:0%; height:100%; transition:width 0.4s ease;"></div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const steps = [
+            { text: currentLang === 'en' ? "Establishing secure link to gateway..." : "Estableciendo enlace seguro con el servidor...", pct: 25 },
+            { text: currentLang === 'en' ? "Authorizing credentials via OAuth token..." : "Autorizando credenciales mediante token OAuth...", pct: 55 },
+            { text: currentLang === 'en' ? "Authenticating premium user flags..." : "Autenticando funciones de usuario premium...", pct: 85 },
+            { text: currentLang === 'en' ? "SSO Authentication Successful!" : "¡Autenticación SSO Exitosa!", pct: 100 }
+        ];
+
+        let stepIndex = 0;
+        const interval = setInterval(() => {
+            if (stepIndex < steps.length) {
+                const step = steps[stepIndex];
+                const stepEl = document.getElementById('sso-step-text');
+                const progressEl = document.getElementById('sso-progress');
+                if (stepEl) stepEl.innerText = step.text;
+                if (progressEl) {
+                    progressEl.style.width = `${step.pct}%`;
+                    if (step.pct === 100) {
+                        stepEl.style.color = 'var(--green)';
+                        progressEl.style.backgroundColor = 'var(--green)';
+                    }
+                }
+                stepIndex++;
+            } else {
+                clearInterval(interval);
+                setTimeout(() => {
+                    if (modal.parentNode) document.body.removeChild(modal);
+                    if (inputDeepseekKey) {
+                        inputDeepseekKey.value = `sso_token_${provider}_authenticated`;
+                    }
+                    appendConsoleLine(currentLang === 'en' ? `[SYSTEM] SSO authorization success for ${provider.toUpperCase()}` : `[SISTEMA] Autorización SSO exitosa para ${provider.toUpperCase()}`, "line-success");
+                    
+                    const saveBtn = document.getElementById('btn-save-settings');
+                    if (saveBtn) {
+                        saveBtn.click();
+                    }
+                }, 800);
+            }
+        }, 500);
+    }
+
+    if (btnLlmSso) {
+        btnLlmSso.addEventListener('click', () => {
+            const selectLlmProvider = document.getElementById('select-llm-provider');
+            const provider = selectLlmProvider ? selectLlmProvider.value : "deepseek";
+            openSSOModal(provider);
+        });
+    }
+
+    if (btnLockSsoLogin) {
+        btnLockSsoLogin.addEventListener('click', () => {
+            const selectLlmProvider = document.getElementById('select-llm-provider');
+            const provider = selectLlmProvider ? selectLlmProvider.value : "deepseek";
+            openSSOModal(provider);
+        });
+    }
+
+    // PROVIDER TABS SWITCHER
+    const providerTabs = document.getElementById('provider-tabs');
+    if (providerTabs) {
+        providerTabs.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                providerTabs.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('active');
+                    b.style.borderBottomColor = 'transparent';
+                    b.style.color = 'var(--text-secondary)';
+                });
+                btn.classList.add('active');
+                btn.style.borderBottomColor = 'var(--cyan)';
+                btn.style.color = 'var(--text-primary)';
+                
+                selectedLlmTab = btn.getAttribute('data-provider');
+                
+                if (selectedTicker && selectedSignalType && selectedMetrics) {
+                    loadAITradeIdea(selectedTicker, selectedSignalType, selectedMetrics);
+                }
+            });
+        });
+    }
+
+    // REGENERATE IDEA
+    const btnRegenerateIdea = document.getElementById('btn-regenerate-idea');
+    if (btnRegenerateIdea) {
+        btnRegenerateIdea.addEventListener('click', () => {
+            if (selectedTicker && selectedSignalType && selectedMetrics) {
+                loadAITradeIdea(selectedTicker, selectedSignalType, selectedMetrics);
+            }
+        });
+    }
 
     // -------------------------------------------------------------------------- //
     // 7. ACCUMULATION RADAR — RENDER & POLLING                                   //
@@ -1931,9 +1258,16 @@ document.addEventListener('DOMContentLoaded', () => {
             ${detectedStr ? `<div class="accum-first-detected"><i class="fa-regular fa-clock"></i> Detected: ${detectedStr}</div>` : ''}
         `;
 
-        // Click to chart
+        // Click to load AI Trade Idea
         card.style.cursor = 'pointer';
-        card.addEventListener('click', () => loadTradingViewChart(data.ticker || data.symbol));
+        card.addEventListener('click', () => {
+            loadAITradeIdea(data.ticker || data.symbol, "accumulation", {
+                price: data.price,
+                accum_score: data.accum_score,
+                accum_status: data.accum_status,
+                signals: data.signals
+            });
+        });
 
         // Remove existing card for same symbol if present (update in place)
         const existing = accumFeed.querySelector(`[data-symbol="${card.dataset.symbol}"]`);
@@ -2455,59 +1789,33 @@ document.addEventListener('DOMContentLoaded', () => {
     function initMobileUX() {
         const IS_MOBILE = () => window.innerWidth <= 768;
 
-        // ── Element refs ──────────────────────────────────────────────
-        const bottomNav       = document.getElementById('mobile-bottom-nav');
-        const statusStrip     = document.getElementById('mobile-status-strip');
-        const drawer          = document.getElementById('mobile-drawer');
-        const drawerOverlay   = document.getElementById('mobile-drawer-overlay');
-        const btnOpenDrawer   = document.getElementById('btn-mobile-settings');
-        const btnCloseDrawer  = document.getElementById('btn-drawer-close');
-
-        // Mobile mirrors of desktop stats
-        const mssStatus   = document.getElementById('mss-status');
-        const mssDot      = document.getElementById('mss-pulse');
-        const mssPairs    = document.getElementById('mss-pairs');
-        const mssRate     = document.getElementById('mss-rate');
-        const drawerStatusTxt = document.getElementById('drawer-status-text');
-        const drawerPairs     = document.getElementById('drawer-pairs-count');
-        const drawerRate      = document.getElementById('drawer-rate-status');
-
-        // Mobile bottom nav buttons
+        // Mobile bottom nav buttons (internal dashboard sections)
         const mobBtns = {
-            dashboard: document.getElementById('mob-nav-dashboard'),
-            accum:     document.getElementById('mob-nav-accum'),
-            watchlist: document.getElementById('mob-nav-watchlist'),
-            compound:  document.getElementById('mob-nav-compound'),
-            admin:     document.getElementById('mob-nav-admin'),
+            dashboard: document.getElementById('mob-btn-dash'),
+            accum:     document.getElementById('mob-btn-accum'),
+            watchlist: document.getElementById('mob-btn-watchlist')
         };
 
         // Desktop panels that exist in the grid
         const panels = {
             dashboard: document.querySelector('.breakout-radar'),
             accum:     document.querySelector('.accum-radar-panel'),
-            watchlist: document.querySelector('.telemetry-deck'),
-            compound:  document.getElementById('compound-interest-panel'),
-            admin:     document.getElementById('admin-console-panel'),
+            watchlist: document.querySelector('.telemetry-deck')
         };
 
-        // ── Drawer open / close ───────────────────────────────────────
-        function openDrawer() {
-            drawer.classList.add('open');
-            drawerOverlay.classList.add('open');
-            document.body.style.overflow = 'hidden';
-            syncDrawerStats();
-        }
         function closeDrawer() {
-            drawer.classList.remove('open');
-            drawerOverlay.classList.remove('open');
+            const drawer = document.getElementById('mobile-drawer');
+            const drawerOverlay = document.getElementById('mobile-drawer-overlay');
+            if (drawer) drawer.classList.remove('open');
+            if (drawerOverlay) drawerOverlay.classList.remove('open');
             document.body.style.overflow = '';
         }
-        if (btnOpenDrawer)  btnOpenDrawer.addEventListener('click', openDrawer);
-        if (btnCloseDrawer) btnCloseDrawer.addEventListener('click', closeDrawer);
-        if (drawerOverlay)  drawerOverlay.addEventListener('click', closeDrawer);
 
         // ── Mobile bottom nav view switching ─────────────────────────
         let activeView = 'dashboard';
+        const hash = window.location.hash;
+        if (hash === '#accum') activeView = 'accum';
+        else if (hash === '#watchlist') activeView = 'watchlist';
 
         function showMobileView(view) {
             if (!IS_MOBILE()) return;
@@ -2519,85 +1827,41 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             // For mobile: show only the target panel, hide others in the grid
-            // We do this by stacking panels vertically and hiding non-active ones
-            const grid = document.querySelector('.terminal-grid');
-            if (!grid) return;
-
-            // On mobile grid is 1-col — just scroll to the right panel
-            // Better: hide/show panels so only one is visible at a time
             Object.entries(panels).forEach(([key, panel]) => {
                 if (!panel) return;
+                panel.style.display = (key === view) ? '' : 'none';
                 if (key === view) {
-                    panel.style.display = '';
                     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                } else if (key !== 'compound' && key !== 'admin') {
-                    // Standard grid panels hide/show
-                    panel.style.display = (key === view) ? '' : 'none';
                 }
             });
-
-            // Special handling for compound / admin (they live outside the grid)
-            const compoundPanel = document.getElementById('compound-interest-panel');
-            const adminPanel    = document.getElementById('admin-console-panel');
-            const mainGrid      = document.querySelector('.terminal-grid');
-
-            if (view === 'compound') {
-                if (mainGrid)      mainGrid.style.display = 'none';
-                if (compoundPanel) { compoundPanel.style.display = 'grid'; compoundPanel.style.marginTop = '0'; }
-                if (adminPanel)    adminPanel.style.display = 'none';
-            } else if (view === 'admin') {
-                if (mainGrid)      mainGrid.style.display = 'none';
-                if (compoundPanel) compoundPanel.style.display = 'none';
-                if (adminPanel)    { adminPanel.style.display = 'block'; adminPanel.style.marginTop = '0'; }
-            } else {
-                if (compoundPanel) compoundPanel.style.display = 'none';
-                if (adminPanel)    adminPanel.style.display = 'none';
-                if (mainGrid)      mainGrid.style.display = 'grid';
-
-                // Show only the relevant grid panel
-                Object.entries(panels).forEach(([key, panel]) => {
-                    if (!panel || key === 'compound' || key === 'admin') return;
-                    panel.style.display = (key === view) ? '' : 'none';
-                });
-            }
-
-            // Close drawer if open
-            closeDrawer();
         }
 
         // Wire bottom nav buttons
         Object.entries(mobBtns).forEach(([view, btn]) => {
-            if (btn) btn.addEventListener('click', () => showMobileView(view));
+            if (btn) {
+                btn.addEventListener('click', (e) => {
+                    // Update URL hash
+                    window.location.hash = (view === 'dashboard') ? 'radar' : view;
+                    showMobileView(view);
+                });
+            }
         });
 
-        // Also expose compound nav button in top nav to mobile nav
-        const navCompound = document.getElementById('nav-compound');
-        if (navCompound) {
-            navCompound.addEventListener('click', () => {
-                if (IS_MOBILE()) showMobileView('compound');
-            });
-        }
+        // Listen for hash changes
+        window.addEventListener('hashchange', () => {
+            const h = window.location.hash;
+            if (h === '#accum') showMobileView('accum');
+            else if (h === '#watchlist') showMobileView('watchlist');
+            else showMobileView('dashboard');
+        });
 
         // ── Desktop/Mobile mode toggle on resize ─────────────────────
         function applyResponsiveMode() {
             if (IS_MOBILE()) {
-                if (bottomNav)  bottomNav.style.display = 'flex';
-                if (statusStrip) statusStrip.style.display = 'flex';
-                // Restore view after resize
                 showMobileView(activeView);
             } else {
-                if (bottomNav)  bottomNav.style.display = 'none';
-                if (statusStrip) statusStrip.style.display = 'none';
                 // Desktop: show all panels
-                const mainGrid = document.querySelector('.terminal-grid');
-                if (mainGrid) mainGrid.style.display = '';
-                const compoundPanel = document.getElementById('compound-interest-panel');
-                const adminPanel    = document.getElementById('admin-console-panel');
-                // Panels: restore desktop visibility
                 Object.values(panels).forEach(p => { if (p) p.style.display = ''; });
-                if (compoundPanel) compoundPanel.style.display = 'none'; // controlled by top nav
-                if (adminPanel)    adminPanel.style.display = 'none';
-                closeDrawer();
             }
         }
 
@@ -2609,30 +1873,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Initial apply
         applyResponsiveMode();
-
-        // ── Status strip sync (poll desktop stat elements) ───────────
-        function syncStatusStrip() {
-            if (!IS_MOBILE()) return;
-            // Sync from desktop stat elements
-            if (systemStatusText && mssStatus) {
-                mssStatus.textContent = systemStatusText.textContent;
-                if (drawerStatusTxt) drawerStatusTxt.textContent = systemStatusText.textContent;
-            }
-            if (trackedPairsCount && mssPairs) {
-                mssPairs.textContent = trackedPairsCount.textContent + ' PAIRS';
-                if (drawerPairs) drawerPairs.textContent = trackedPairsCount.textContent;
-            }
-            if (rateLimitStatus && mssRate) {
-                mssRate.textContent = rateLimitStatus.textContent;
-                if (drawerRate) drawerRate.textContent = rateLimitStatus.textContent;
-            }
-            // Sync status dot color
-            if (mssDot && systemStatusText) {
-                const isOnline = systemStatusText.textContent.includes('ONLINE');
-                mssDot.classList.toggle('online', isOnline);
-            }
-        }
-        setInterval(syncStatusStrip, 1500);
 
         // ── Mobile drawer button mirrors ──────────────────────────────
         // Start / Stop scanner
@@ -2695,7 +1935,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Sync desktop values INTO drawer when opened
-        function syncDrawerStats() {
+        function syncDrawerSettings() {
             const mobInterval = document.getElementById('mob-interval-sec');
             const mobMaxPairs = document.getElementById('mob-max-pairs');
             const mobVol      = document.getElementById('mob-vol-threshold');
@@ -2704,7 +1944,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mobMaxPairs && inputMaxPairs && inputMaxPairs.value)        mobMaxPairs.value = inputMaxPairs.value;
             if (mobVol && inputVolumeThreshold && inputVolumeThreshold.value) mobVol.value = inputVolumeThreshold.value;
             if (mobPrice && inputPriceThreshold && inputPriceThreshold.value) mobPrice.value = inputPriceThreshold.value;
-            syncStatusStrip();
+        }
+
+        // Expose function for common.js drawer integration
+        const btnOpenDrawer = document.getElementById('btn-mobile-settings');
+        if (btnOpenDrawer) {
+            btnOpenDrawer.addEventListener('click', syncDrawerSettings);
         }
 
         // Simulate alert from drawer
@@ -2712,43 +1957,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mobSim && btnTriggerSimulation) {
             mobSim.addEventListener('click', () => { btnTriggerSimulation.click(); closeDrawer(); });
         }
-
-        // Theme toggle from drawer
-        const btnThemeMobile = document.getElementById('btn-theme-mobile');
-        if (btnThemeMobile && btnThemeToggle) {
-            btnThemeMobile.addEventListener('click', () => btnThemeToggle.click());
-        }
-
-        // Language toggle from drawer
-        const btnLangMobile = document.getElementById('btn-lang-mobile');
-        const drawerLangLabel = document.getElementById('drawer-lang-label');
-        if (btnLangMobile && btnLangToggle) {
-            btnLangMobile.addEventListener('click', () => {
-                btnLangToggle.click();
-                if (drawerLangLabel) drawerLangLabel.textContent = btnLangToggle.textContent.trim();
-            });
-        }
-
-        // Logout from drawer
-        const btnLogoutMobile = document.getElementById('btn-logout-mobile');
-        if (btnLogoutMobile && btnLogout) {
-            btnLogoutMobile.addEventListener('click', () => { closeDrawer(); btnLogout.click(); });
-        }
-
-        // ── Admin nav button visibility sync ─────────────────────────
-        // Mirror admin nav visibility to mobile bottom nav
-        function syncAdminNav() {
-            const mobAdminBtn = document.getElementById('mob-nav-admin');
-            if (!mobAdminBtn || !navAdmin) return;
-            mobAdminBtn.style.display = navAdmin.style.display === 'none' ? 'none' : '';
-        }
-        if (navAdmin) {
-            new MutationObserver(syncAdminNav).observe(navAdmin, { attributes: true, attributeFilter: ['style'] });
-        }
-        syncAdminNav();
-
-        // ── Expose showMobileView for external callers (e.g. router) ──
-        window._showMobileView = showMobileView;
     }
 
     initMobileUX();

@@ -93,20 +93,25 @@ body.light-mode .btn-secondary:hover {
 body {
     background-color: var(--bg-base);
     color: var(--text-primary);
-    overflow: hidden;
-    height: 100vh;
-    width: 100vw;
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-height: 100vh;
+    width: 100%;
     position: relative;
 }
 
-/* On mobile, allow vertical scrolling */
-@media (max-width: 768px) {
-    body {
-        overflow-x: hidden;
-        overflow-y: auto;
-        height: auto;
-        min-height: 100vh;
-    }
+img,
+canvas,
+iframe,
+video {
+    max-width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+    max-width: 100%;
 }
 
 /* Custom Scrollbars */
@@ -179,9 +184,12 @@ body {
     z-index: 10;
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 100vh;
+    height: auto;
     padding: 16px;
     gap: 16px;
+    width: 100%;
+    max-width: 100%;
 }
 
 /* Header styling */
@@ -194,8 +202,11 @@ body {
     padding: 12px 24px;
     border-radius: 4px;
     box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-    position: relative;
-    overflow: hidden;
+    position: sticky;
+    top: 16px;
+    z-index: 7000;
+    flex-wrap: wrap;
+    gap: 12px;
 }
 .terminal-header::after {
     content: '';
@@ -304,10 +315,27 @@ body {
 /* Grid layout - 4 columns: Control | Breakout | Accum Radar | Telemetry */
 .terminal-grid {
     display: grid;
-    grid-template-columns: 300px 1fr 320px 1.6fr;
+    grid-template-columns:
+        minmax(260px, 300px)
+        minmax(280px, 1fr)
+        minmax(280px, 320px)
+        minmax(360px, 1.6fr);
     gap: 16px;
     flex: 1;
     min-height: 0;
+    width: 100%;
+    max-width: 100%;
+}
+
+.terminal-grid > *,
+.grid-panel,
+.inner-panel,
+.panel-body,
+.form-row > *,
+.header-nav,
+.header-controls,
+.header-stats {
+    min-width: 0;
 }
 
 /* Panel Containers */
@@ -445,8 +473,34 @@ body {
 }
 .form-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+}
+
+.form-group,
+.form-actions,
+.action-buttons {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea,
+.form-actions .btn {
+    width: 100%;
+}
+
+.btn {
+    min-width: 0;
+}
+
+.btn span,
+.panel-header h2,
+.form-group label,
+.stat-label,
+.stat-value {
+    overflow-wrap: anywhere;
 }
 
 .form-group label {
@@ -461,13 +515,105 @@ body {
     display: flex;
     align-items: center;
 }
-.input-with-icon i {
+.input-with-icon > i {
     position: absolute;
     left: 10px;
     font-size: 12px;
+    z-index: 1;
+    pointer-events: none;
 }
 .input-with-icon input {
     padding-left: 28px;
+}
+.input-with-icon > select {
+    padding-left: 30px !important;
+}
+
+.advanced-integrations-panel .input-with-icon {
+    min-width: 0;
+}
+.advanced-integrations-panel .input-with-icon > input,
+.advanced-integrations-panel .input-with-icon > select {
+    min-width: 0;
+}
+.advanced-integrations-panel #fg-llm-key-container > .input-with-icon > div {
+    min-width: 0;
+}
+.advanced-integrations-panel #btn-llm-sso {
+    flex: 0 0 auto;
+    min-width: 78px;
+}
+.advanced-integrations-panel #btn-llm-sso i {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+}
+
+.integration-field {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-width: 0;
+}
+.integration-field > i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    z-index: 2;
+    width: 12px;
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+.integration-field > input,
+.integration-field > select {
+    display: block;
+    width: 100% !important;
+    min-width: 0;
+    height: 35px;
+    padding: 7px 30px 7px 34px !important;
+    background: var(--bg-base);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 19px;
+}
+.integration-field > select {
+    appearance: auto;
+}
+.integration-action-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+}
+.integration-action-row #btn-llm-sso {
+    width: auto;
+    min-width: 82px;
+    height: 35px;
+    padding: 6px 10px;
+    gap: 6px;
+    white-space: nowrap;
+    font-size: 9px;
+}
+.integration-action-row #btn-llm-sso > i {
+    position: static !important;
+    width: auto;
+    transform: none !important;
+}
+
+@media (max-width: 420px) {
+    .integration-action-row {
+        grid-template-columns: 1fr;
+    }
+    .integration-action-row #btn-llm-sso {
+        width: 100%;
+    }
 }
 
 input[type="text"],
@@ -849,10 +995,14 @@ input[type="number"]:focus {
 .table-wrapper {
     overflow-y: auto;
     flex: 1;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .watchlist-table {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     font-size: 12px;
     text-align: left;
@@ -2731,14 +2881,69 @@ body.light-mode .tooltip-content {
    ========================================================================== */
 
 /* â”€â”€ 1024px: Compound calculator stacks â”€â”€ */
+@media (max-width: 1500px) {
+    .terminal-grid {
+        grid-template-columns: minmax(250px, 0.9fr) minmax(300px, 1.15fr) minmax(300px, 1fr);
+    }
+    .telemetry-deck {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1180px) {
+    .terminal-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .telemetry-deck {
+        grid-column: auto;
+        display: flex;
+    }
+    .header-stats {
+        width: 100%;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .stat-box {
+        flex: 1 1 0;
+        align-items: flex-start;
+    }
+    .header-controls {
+        margin-left: auto;
+        margin-right: 0;
+    }
+}
+
 @media (max-width: 1024px) {
     .compound-interest-grid {
         grid-template-columns: 1fr !important;
     }
     .header-logo h1 { font-size: 18px; }
+    .compound-interest-grid,
+    .admin-console-panel,
+    .journal-layout {
+        width: 100%;
+        max-width: 100%;
+    }
 }
 
 /* â”€â”€ 768px: Tablet â€” simplified header, single-column grid â”€â”€ */
+@media (max-width: 900px) {
+    .terminal-grid {
+        grid-template-columns: 1fr;
+    }
+    .telemetry-deck {
+        grid-column: auto;
+    }
+    .header-nav {
+        flex: 1 1 100%;
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+}
+
 @media (max-width: 768px) {
     /* Allow scroll */
     body {
@@ -2759,6 +2964,9 @@ body.light-mode .tooltip-content {
 
     /* Header: compact two-row */
     .terminal-header {
+        position: sticky;
+        top: 8px;
+        z-index: 7000;
         flex-wrap: wrap;
         gap: 6px;
         padding: 8px 12px;
@@ -2819,6 +3027,18 @@ body.light-mode .tooltip-content {
     .admin-tab-group .btn { flex: 1 1 auto; font-size: 10px; padding: 5px 8px !important; }
     .admin-users-table { min-width: 580px; }
     .admin-features-table { min-width: 460px; }
+
+    .form-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .modal-content,
+    .login-card,
+    .auth-card {
+        width: min(100%, 560px);
+        max-height: calc(100dvh - 24px);
+        overflow-y: auto;
+    }
 }
 
 /* â”€â”€ 480px: Mobile â€” native app layout â”€â”€ */
@@ -2830,7 +3050,13 @@ body.light-mode .tooltip-content {
     }
 
     /* Header: logo + controls only, very compact */
-    .terminal-header { padding: 6px 10px; gap: 4px; }
+    .terminal-header {
+        position: sticky;
+        top: 6px;
+        z-index: 7000;
+        padding: 6px 10px;
+        gap: 4px;
+    }
     .header-logo h1 { font-size: 13px; }
     .version-tag { display: none; }
     .btn-control { min-width: 28px; height: 28px; padding: 4px 8px; font-size: 10px; }
@@ -2855,7 +3081,7 @@ body.light-mode .tooltip-content {
     .action-buttons { gap: 6px; }
 
     /* Form rows: always stack */
-    .form-row { flex-direction: column; gap: 8px; }
+    .form-row { grid-template-columns: 1fr; gap: 8px; }
     .form-group { margin-bottom: 8px; }
 
     /* Watchlist: tighter */
@@ -2904,12 +3130,32 @@ body.light-mode .tooltip-content {
 
     /* Year breakdown table */
     .table-toggle-btn { font-size: 10px; padding: 6px 10px; }
+
+    .action-buttons,
+    .drawer-action-row,
+    .journal-toolbar-actions {
+        flex-wrap: wrap;
+    }
+    .action-buttons .btn,
+    .drawer-action-row .btn,
+    .journal-toolbar-actions .btn {
+        flex: 1 1 140px;
+    }
+
+    .search-box {
+        width: min(100%, 220px);
+    }
 }
 
 /* â”€â”€ 375px: iPhone SE â€” ultra compact â”€â”€ */
 @media (max-width: 375px) {
     .terminal-container { padding: 4px; gap: 4px; padding-bottom: 68px; }
-    .terminal-header { padding: 5px 8px; }
+    .terminal-header {
+        position: sticky;
+        top: 4px;
+        z-index: 7000;
+        padding: 5px 8px;
+    }
     .header-logo h1 { font-size: 12px; }
     .btn-control { min-width: 26px; height: 26px; padding: 3px 6px; font-size: 9px; }
     .panel-header h2 { font-size: 10px; letter-spacing: 0.5px; }
@@ -2941,3 +3187,236 @@ body.light-mode .drawer-stat { background: var(--bg-surface-glow); }
 body.light-mode .drawer-chip { color: var(--text-secondary); }
 body.light-mode .mob-nav-btn { color: var(--text-dim); }
 body.light-mode .mob-nav-btn.active { color: #0284c7; }
+
+/* Final responsive containment overrides */
+html,
+body,
+.terminal-container,
+.terminal-grid,
+.grid-panel,
+.panel-body,
+.advanced-integrations-panel {
+    max-width: 100%;
+}
+
+.advanced-integrations-panel,
+.advanced-integrations-panel *,
+.terminal-grid > * {
+    box-sizing: border-box;
+}
+
+.advanced-integrations-panel .form-group {
+    width: 100%;
+    min-width: 0;
+}
+
+.advanced-integrations-panel .integration-field {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+}
+
+.advanced-integrations-panel .integration-field > i {
+    position: absolute !important;
+    inset: 50% auto auto 11px !important;
+    width: 14px !important;
+    margin: 0 !important;
+    transform: translateY(-50%) !important;
+    text-align: center;
+    pointer-events: none;
+}
+
+.advanced-integrations-panel .integration-field > input,
+.advanced-integrations-panel .integration-field > select {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 36px !important;
+    margin: 0 !important;
+    padding: 7px 32px 7px 36px !important;
+    text-indent: 0 !important;
+}
+
+.advanced-integrations-panel .integration-action-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: 8px !important;
+}
+
+.advanced-integrations-panel #btn-llm-sso {
+    position: static !important;
+    width: auto !important;
+    min-width: 84px !important;
+    max-width: none !important;
+    height: 36px !important;
+    margin: 0 !important;
+    padding: 6px 10px !important;
+}
+
+.advanced-integrations-panel #btn-llm-sso > i {
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    margin: 0 !important;
+    transform: none !important;
+}
+
+@container (max-width: 280px) {
+    .advanced-integrations-panel .integration-action-row {
+        grid-template-columns: 1fr !important;
+    }
+    .advanced-integrations-panel #btn-llm-sso {
+        width: 100% !important;
+    }
+}
+
+.control-deck {
+    container-type: inline-size;
+}
+
+@media (max-width: 520px) {
+    .advanced-integrations-panel .integration-action-row {
+        grid-template-columns: 1fr !important;
+    }
+    .advanced-integrations-panel #btn-llm-sso {
+        width: 100% !important;
+    }
+
+    .panel-header,
+    .journal-toolbar,
+    .mobile-status-strip {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .panel-header > *,
+    .journal-toolbar > *,
+    .mobile-status-strip > * {
+        min-width: 0;
+    }
+}
+
+/* Desktop viewport-height containment */
+@media (min-width: 769px) {
+    html,
+    body {
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .terminal-container {
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .terminal-header {
+        position: relative;
+        top: auto;
+        flex: 0 0 auto;
+        max-height: min(22dvh, 150px);
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .terminal-grid {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .terminal-grid > *,
+    .grid-panel,
+    .inner-panel,
+    .telemetry-deck {
+        min-height: 0;
+        max-height: 100%;
+        overflow: hidden;
+    }
+
+    .grid-panel > .panel-body,
+    .inner-panel > .panel-body {
+        min-height: 0;
+        max-height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+    }
+
+    .control-deck .panel-body {
+        padding-bottom: 24px;
+    }
+
+    .advanced-integrations-panel {
+        min-height: 0;
+    }
+
+    .compound-interest-grid,
+    .admin-console-panel,
+    .journal-panel {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: calc(100dvh - 120px);
+        overflow: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+    }
+
+    .journal-layout,
+    .compound-interest-grid {
+        min-height: 0;
+    }
+}
+
+/* Short desktop screens need denser controls to preserve useful workspace. */
+@media (min-width: 769px) and (max-height: 760px) {
+    .terminal-container {
+        padding: 8px;
+        gap: 8px;
+    }
+
+    .terminal-header {
+        padding: 8px 14px;
+    }
+
+    .panel-header {
+        padding: 8px 12px;
+    }
+
+    .panel-body {
+        padding: 10px 12px;
+    }
+
+    .config-form {
+        gap: 8px;
+    }
+
+    .form-row {
+        gap: 8px;
+    }
+
+    .form-group {
+        gap: 4px;
+    }
+
+    .divider {
+        margin: 10px 0;
+    }
+
+    .advanced-integrations-panel .integration-field > input,
+    .advanced-integrations-panel .integration-field > select,
+    .advanced-integrations-panel #btn-llm-sso {
+        height: 32px !important;
+    }
+
+    .btn {
+        padding-top: 7px;
+        padding-bottom: 7px;
+    }
+}

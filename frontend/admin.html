@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Console | PUMP_SCANNER</title>
+    <meta name="description" content="Monitor active socket threads, memory logs, and update system scanner configurations and role feature flags.">
+    
+    <!-- Custom Cyberpunk Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Local Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- TradingView widget client -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+    <div class="terminal-container">
+        <header class="terminal-header">
+            <div class="header-logo">
+                <div class="pulse-icon red-pulse" id="scanner-state-pulse"></div>
+                <h1>PUMP_SCANNER//<span class="version-tag">v2.2.0-ACCUM</span></h1>
+            </div>
+            
+            <!-- Navigation Tabs (desktop) -->
+            <nav class="header-nav" id="header-nav" style="display: none;">
+                <a href="/" class="nav-item" id="nav-dashboard">
+                    <i class="fa-solid fa-chart-pie"></i> <span data-translate="DASHBOARD">DASHBOARD</span>
+                </a>
+                <a href="/admin" class="nav-item" id="nav-admin" style="display: none;">
+                    <i class="fa-solid fa-user-shield"></i> <span data-translate="ADMIN_CONSOLE">ADMIN_CONSOLE</span>
+                </a>
+                <a href="/calculator" class="nav-item" id="nav-compound">
+                    <i class="fa-solid fa-calculator"></i> <span data-translate="COMPOUND_INTEREST">COMPOUND INTEREST</span>
+                </a>
+                <a href="/trades" class="nav-item" id="nav-ledger">
+                    <i class="fa-solid fa-book"></i> <span data-translate="MY_TRADES_LEDGER">MY_TRADES (🔒)</span>
+                </a>
+            </nav>
+            
+            <!-- Toggles Deck -->
+            <div class="header-controls">
+                <!-- User Profile Badge -->
+                <div class="user-profile-badge" id="user-profile-badge" style="display: none;">
+                    <img src="" alt="Avatar" id="user-avatar" class="user-avatar">
+                    <div class="user-info-text">
+                        <span id="user-name" class="user-name">Loading...</span>
+                        <span id="user-role-badge" class="badge">USER</span>
+                    </div>
+                    <button type="button" class="btn-logout" id="btn-logout" title="Sign Out">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </a>
+                </div>
+
+                <button type="button" class="btn-control" id="btn-theme-toggle" title="Toggle Light/Dark Mode">
+                    <i class="fa-solid fa-moon"></i>
+                </a>
+                <button type="button" class="btn-control" id="btn-lang-toggle" title="Switch Language">
+                    <span>ES</span>
+                </a>
+            </div>
+
+            <div class="header-stats">
+                <div class="stat-box">
+                    <span class="stat-label" data-translate="SYSTEM_STATUS">SYSTEM_STATUS</span>
+                    <span class="stat-value text-red" id="system-status-text">OFFLINE</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label" data-translate="TRACKED_PAIRS">TRACKED_PAIRS</span>
+                    <span class="stat-value text-cyan" id="tracked-pairs-count">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label" data-translate="RATE_LIMIT">RATE_LIMIT</span>
+                    <span class="stat-value text-green" id="rate-limit-status">NOMINAL</span>
+                </div>
+            </div>
+        </header>
+        <div class="mobile-status-strip" id="mobile-status-strip" style="display:none;">
+            <div class="mss-item">
+                <span class="mss-dot" id="mss-pulse"></span>
+                <span class="mss-label" id="mss-status">OFFLINE</span>
+            </div>
+            <div class="mss-item">
+                <i class="fa-solid fa-satellite-dish"></i>
+                <span id="mss-pairs">0 PAIRS</span>
+            </div>
+            <div class="mss-item">
+                <i class="fa-solid fa-signal"></i>
+                <span id="mss-rate">NOMINAL</span>
+            </div>
+            <button class="mss-settings-btn" id="btn-mobile-settings" title="Settings">
+                <i class="fa-solid fa-sliders"></i>
+            </button>
+        </div>
+        <section class="grid-panel admin-console-panel" id="admin-console-panel" style="margin-top: 15px;">
+            <div class="panel-header" style="justify-content: space-between; align-items: center; width: 100%;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-user-shield text-gold"></i>
+                    <h2>ADMIN_CONSOLE // <span class="version-tag text-gold" id="admin-sub-title">USER_ROLES</span></h2>
+                </div>
+                <div class="admin-tab-group" style="display: flex; gap: 10px;">
+                    <button class="btn btn-sm btn-outline active" id="admin-tab-users" style="padding: 4px 10px; font-size: 11px;"><i class="fa-solid fa-users"></i> CMDB USER MANAGER</button>
+                    <button class="btn btn-sm btn-outline" id="admin-tab-features" style="padding: 4px 10px; font-size: 11px;"><i class="fa-solid fa-toggle-on"></i> FEATURE FLAGS</button>
+                    <button class="btn btn-sm btn-outline" id="admin-tab-stats" style="padding: 4px 10px; font-size: 11px;"><i class="fa-solid fa-chart-line"></i> SYSTEM MONITOR</button>
+                </div>
+            </div>
+            <div class="panel-body flex-column">
+                <!-- Tab Content: User Manager -->
+                <div id="admin-view-users" class="admin-sub-view">
+                    <div class="table-wrapper">
+                        <table class="watchlist-table admin-users-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email / ID</th>
+                                    <th>Role Status</th>
+                                    <th>Created At</th>
+                                    <th>DB Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-users-table-body">
+                                <tr>
+                                    <td colspan="5" class="table-placeholder">Loading users database...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Tab Content: System Diagnostics -->
+                <div id="admin-view-stats" class="admin-sub-view" style="display: none;">
+                    <div class="admin-stats-grid">
+                        <div class="stat-card">
+                            <i class="fa-solid fa-users fa-2x text-blue"></i>
+                            <div class="stat-value" id="stat-total-users">0</div>
+                            <div class="stat-label">TOTAL REGISTERED USERS</div>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fa-solid fa-key fa-2x text-green"></i>
+                            <div class="stat-value" id="stat-active-sessions">0</div>
+                            <div class="stat-label">ACTIVE SESSIONS</div>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fa-solid fa-satellite fa-2x text-orange"></i>
+                            <div class="stat-value" id="stat-monitored-pairs">0</div>
+                            <div class="stat-label">MONITORED PAIRS</div>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fa-solid fa-bell fa-2x text-red"></i>
+                            <div class="stat-value" id="stat-alerts-dispatched">0</div>
+                            <div class="stat-label">ALERTS DISPATCHED</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content: Feature Flags Manager -->
+                <div id="admin-view-features" class="admin-sub-view" style="display: none;">
+                    <div class="table-wrapper">
+                        <table class="watchlist-table admin-features-table">
+                            <thead>
+                                <tr>
+                                    <th style="text-align: left;">Role</th>
+                                    <th>Webhook URL Settings</th>
+                                    <th>LLM Integration (SSO)</th>
+                                    <th>Compound Calculator</th>
+                                    <th>Trades Ledger</th>
+                                    <th>Intelligence Simulator</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-features-table-body">
+                                <tr>
+                                    <td colspan="6" class="table-placeholder">Loading features configuration...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+    
+    <div id="login-overlay" class="login-overlay" style="display: none;">
+        <div class="login-card">
+            <!-- Dev notification for confirmation/reset codes -->
+            <div id="dev-code-toast" class="dev-code-toast" style="display: none;">
+                <i class="fa-solid fa-bug text-orange"></i>
+                <div class="toast-content" style="flex: 1; text-align: left;">
+                    <strong style="color: var(--orange); font-size: 11px;">DEVELOPER NOTIFICATION:</strong>
+                    <div id="dev-code-text" style="font-family: monospace; font-size: 13px; color: #fff; margin-top: 2px;">Code: 123456</div>
+                </div>
+            </div>
+
+            <div class="login-logo">
+                <div class="pulse-icon red-pulse"></div>
+                <h2>PUMP_SCANNER//<span class="version-tag">PORTAL</span></h2>
+            </div>
+            <p class="login-subtitle">SECURE TERMINAL ACCESS GATED</p>
+            
+            <!-- Views container -->
+            <!-- 1. LOGIN / SIGNUP VIEW -->
+            <div id="auth-panel-main">
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="tab-login">SIGN IN</button>
+                    <button class="auth-tab" id="tab-signup">REGISTER</button>
+                </div>
+                
+                <!-- LOGIN FORM -->
+                <form id="form-login" class="auth-form-sub">
+                    <div class="form-group">
+                        <label>USERNAME OR EMAIL</label>
+                        <input type="text" id="login-username" required placeholder="admin / email@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>PASSWORD</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="login-password" required placeholder="••••••••">
+                            <button type="button" class="btn-toggle-password" onclick="togglePasswordVisibility('login-password')">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top: 15px;">AUTHENTICATE</button>
+                    <p class="auth-footer-link" style="margin-top: 12px; font-size: 11px; text-align: center;"><a href="#" id="link-forgot-password" style="color: var(--yellow); text-decoration: none;">Forgot password?</a></p>
+                </form>
+                
+                <!-- SIGNUP FORM -->
+                <form id="form-signup" class="auth-form-sub" style="display: none;">
+                    <div class="form-group">
+                        <label>FULL NAME</label>
+                        <input type="text" id="signup-name" required placeholder="John Doe">
+                    </div>
+                    <div class="form-group">
+                        <label>EMAIL ADDRESS</label>
+                        <input type="email" id="signup-email" required placeholder="name@domain.com">
+                    </div>
+                    <div class="form-group">
+                        <label>PASSWORD</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="signup-password" required placeholder="Min 6 characters">
+                            <button type="button" class="btn-toggle-password" onclick="togglePasswordVisibility('signup-password')">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top: 15px;">CREATE ACCOUNT</button>
+                </form>
+            </div>
+            
+            <!-- 2. CONFIRM EMAIL VIEW -->
+            <div id="auth-panel-confirm" style="display: none;">
+                <h3 class="auth-view-title" style="margin-top: 10px; color: var(--blue);"><i class="fa-regular fa-envelope"></i> CONFIRM YOUR EMAIL</h3>
+                <p class="auth-view-desc" style="font-size: 11px; color: var(--text-dim); margin-top: 5px; line-height: 1.4;">A 6-digit confirmation code has been generated. Enter it below to verify your email address.</p>
+                <form id="form-confirm" style="margin-top: 15px;">
+                    <div class="form-group">
+                        <label>CONFIRMATION CODE</label>
+                        <input type="text" id="confirm-code" required maxlength="6" placeholder="123456" style="text-align: center; font-size: 18px; letter-spacing: 4px; font-family: monospace;">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top: 15px;">VERIFY EMAIL</button>
+                    <p class="auth-footer-link" style="margin-top: 12px; font-size: 11px; text-align: center;"><a href="#" id="link-confirm-back" style="color: var(--yellow); text-decoration: none;">Back to Sign In</a></p>
+                </form>
+            </div>
+            
+            <!-- 3. FORGOT PASSWORD VIEW -->
+            <div id="auth-panel-forgot" style="display: none;">
+                <h3 class="auth-view-title" style="margin-top: 10px; color: var(--orange);"><i class="fa-solid fa-key"></i> RESET PASSWORD</h3>
+                <p class="auth-view-desc" style="font-size: 11px; color: var(--text-dim); margin-top: 5px; line-height: 1.4;">Enter your registered email address to request a security reset code.</p>
+                <form id="form-forgot" style="margin-top: 15px;">
+                    <div class="form-group">
+                        <label>EMAIL ADDRESS</label>
+                        <input type="email" id="forgot-email" required placeholder="name@domain.com">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top: 15px;">REQUEST RESET CODE</button>
+                    <p class="auth-footer-link" style="margin-top: 12px; font-size: 11px; text-align: center;"><a href="#" id="link-forgot-back" style="color: var(--yellow); text-decoration: none;">Back to Sign In</a></p>
+                </form>
+            </div>
+            
+            <!-- 4. RESET PASSWORD VIEW -->
+            <div id="auth-panel-reset" style="display: none;">
+                <h3 class="auth-view-title" style="margin-top: 10px; color: var(--red);"><i class="fa-solid fa-lock"></i> ENTER NEW PASSWORD</h3>
+                <p class="auth-view-desc" style="font-size: 11px; color: var(--text-dim); margin-top: 5px; line-height: 1.4;">A reset code has been generated. Enter the code and your new password below.</p>
+                <form id="form-reset" style="margin-top: 15px;">
+                    <div class="form-group">
+                        <label>RESET SECURITY CODE</label>
+                        <input type="text" id="reset-token" required placeholder="123456" style="text-align: center; font-size: 16px; letter-spacing: 2px; font-family: monospace;">
+                    </div>
+                    <div class="form-group">
+                        <label>NEW PASSWORD</label>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="reset-password" required placeholder="Min 6 characters">
+                            <button type="button" class="btn-toggle-password" onclick="togglePasswordVisibility('reset-password')">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top: 15px;">UPDATE PASSWORD</button>
+                    <p class="auth-footer-link" style="margin-top: 12px; font-size: 11px; text-align: center;"><a href="#" id="link-reset-back" style="color: var(--yellow); text-decoration: none;">Back to Sign In</a></p>
+                </form>
+            </div>
+            
+            <!-- Pre-seeded hint for testers -->
+            <div class="preseeded-hint" style="margin-top: 20px; padding-top: 12px; border-top: 1px dashed var(--border-color); font-size: 10px; color: var(--text-dim); text-align: left; line-height: 1.5;">
+                <p style="font-weight: bold; color: var(--yellow); margin-bottom: 4px; letter-spacing: 0.5px;">DEVELOPMENT TEST CREDENTIALS:</p>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>ADMIN: <code style="color: #fff; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 2px;">admin</code> / <code style="color: #fff; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 2px;">admin</code></span>
+                    <span>USER: <code style="color: #fff; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 2px;">user</code> / <code style="color: #fff; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 2px;">user</code></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="ledger-locked-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3 class="text-orange"><i class="fa-solid fa-lock"></i> TRADES LEDGER UNLOCK REQUIREMENT</h3>
+                <button class="btn-close-modal" id="btn-close-ledger-modal">&times;</button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="lock-visual-container">
+                    <i class="fa-solid fa-user-lock fa-4x text-orange glow-text-orange"></i>
+                </div>
+                <h4 class="premium-feature-title">MY TRADES LEDGER (PREMIUM ANALYTICAL TOOL)</h4>
+                <p class="modal-desc">
+                    The Trades Ledger is an advanced analytical feature designed to automatically record, track, and score your breakout trade ideas taken directly from the live terminal feed.
+                </p>
+                <div class="premium-tier-details">
+                    <div class="premium-badge-group">
+                        <span class="badge badge-bd">BLACK DIAMOND</span>
+                        <span class="badge badge-prem">PREMIUM ONLY</span>
+                    </div>
+                    <p class="stripe-hint">
+                        Stripe payment integration & automated subscription billing is currently in staging/development.
+                    </p>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-primary" id="btn-close-ledger-modal-ok">ACKNOWLEDGE</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
+            <a href="/#radar" class="mob-nav-btn" id="mob-btn-dash">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>RADAR</span>
+            </a>
+            <a href="/#accum" class="mob-nav-btn" id="mob-btn-accum">
+                <i class="fa-solid fa-magnifying-glass-chart"></i>
+                <span>ACCUM</span>
+            </a>
+            <a href="/#watchlist" class="mob-nav-btn" id="mob-btn-watchlist">
+                <i class="fa-solid fa-table-list"></i>
+                <span>WATCH</span>
+            </a>
+            <a href="/calculator" class="mob-nav-btn" id="mob-btn-calc">
+                <i class="fa-solid fa-calculator"></i>
+                <span>CALC</span>
+            </a>
+            <a href="/trades" class="mob-nav-btn" id="mob-btn-trades">
+                <i class="fa-solid fa-book"></i>
+                <span>MY TRADES</span>
+            </a>
+            <a href="/admin" class="mob-nav-btn" id="mob-btn-admin" style="display:none;">
+                <i class="fa-solid fa-user-shield"></i>
+                <span>ADMIN</span>
+            </a>
+        </nav>
+    <div class="mobile-drawer" id="mobile-drawer">
+            <div class="drawer-handle"></div>
+            <div class="drawer-header">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="fa-solid fa-sliders text-cyan"></i>
+                    <span class="drawer-title" data-translate="CONTROL_DECK">CONTROL_DECK</span>
+                </div>
+                <button class="drawer-close-btn" id="btn-drawer-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="drawer-body">
+                <!-- Scanner Engine Controls -->
+                <div class="drawer-section">
+                    <div class="drawer-section-title">SCANNER ENGINE</div>
+                    <div class="drawer-action-row">
+                        <button class="btn btn-primary" id="btn-start-scanner-mobile">
+                            <i class="fa-solid fa-play"></i> <span data-translate="START_SCANNER">START</span>
+                        </button>
+                        <button class="btn btn-danger disabled" id="btn-stop-scanner-mobile" disabled>
+                            <i class="fa-solid fa-stop"></i> <span data-translate="STOP_SCANNER">STOP</span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Quick Stats -->
+                <div class="drawer-section">
+                    <div class="drawer-section-title">LIVE STATS</div>
+                    <div class="drawer-stats-grid">
+                        <div class="drawer-stat">
+                            <span class="drawer-stat-label" data-translate="SYSTEM_STATUS">STATUS</span>
+                            <span class="drawer-stat-value text-red" id="drawer-status-text">OFFLINE</span>
+                        </div>
+                        <div class="drawer-stat">
+                            <span class="drawer-stat-label" data-translate="TRACKED_PAIRS">PAIRS</span>
+                            <span class="drawer-stat-value text-cyan" id="drawer-pairs-count">0</span>
+                        </div>
+                        <div class="drawer-stat">
+                            <span class="drawer-stat-label" data-translate="RATE_LIMIT">RATE</span>
+                            <span class="drawer-stat-value text-green" id="drawer-rate-status">NOMINAL</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Config Form (mirror of desktop) -->
+                <div class="drawer-section drawer-config">
+                    <div class="drawer-section-title">CONFIGURATION</div>
+                    <div class="form-group">
+                        <label>SCAN INTERVAL (SEC)</label>
+                        <input type="number" id="mob-interval-sec" min="10" max="3600" placeholder="30">
+                    </div>
+                    <div class="form-group">
+                        <label>MAX PAIRS</label>
+                        <input type="number" id="mob-max-pairs" min="5" max="500" placeholder="50">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>VOL GATE</label>
+                            <div class="input-suffix">
+                                <input type="number" id="mob-vol-threshold" step="0.1" min="1" max="20" placeholder="3.0">
+                                <span class="suffix">x</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>PRICE GATE</label>
+                            <div class="input-suffix">
+                                <input type="number" id="mob-price-threshold" step="0.1" min="0.1" max="15" placeholder="1.5">
+                                <span class="suffix">%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary btn-block" id="btn-save-settings-mobile">
+                        <i class="fa-solid fa-floppy-disk"></i> SAVE CONFIG
+                    </button>
+                </div>
+                <!-- Exchanges -->  
+                <div class="drawer-section">
+                    <div class="drawer-section-title">EXCHANGES</div>
+                    <div class="drawer-chip-group">
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-binance" checked> BINANCE
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-bybit"> BYBIT
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-hyperliquid"> HYPERLIQUID
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-spot" checked> SPOT
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-futures"> FUTURES
+                        </label>
+                    </div>
+                </div>
+                <!-- Simulate -->
+                <div class="drawer-section" id="mobile-simulation-section" style="display: none;">
+                    <div class="drawer-section-title">SIMULATE ALERT</div>
+                    <button class="btn btn-neon btn-block" id="btn-sim-mobile">
+                        <i class="fa-solid fa-bolt"></i> FIRE SIMULATED ALERT
+                    </button>
+                </div>
+                <!-- Theme & Lang -->
+                <div class="drawer-section">
+                    <div class="drawer-section-title">APPEARANCE</div>
+                    <div class="drawer-action-row">
+                        <button class="btn btn-secondary" id="btn-theme-mobile">
+                            <i class="fa-solid fa-moon"></i> THEME
+                        </button>
+                        <button class="btn btn-secondary" id="btn-lang-mobile">
+                            <i class="fa-solid fa-language"></i> <span id="drawer-lang-label">ES</span>
+                        </button>
+                        <button class="btn btn-danger" id="btn-logout-mobile">
+                            <i class="fa-solid fa-right-from-bracket"></i> SIGN OUT
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <!-- App scripts -->
+    <script type="module" src="common.js"></script>
+    <script type="module" src="admin.js"></script>
+</body>
+</html>

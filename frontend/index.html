@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Autonomous Crypto Pump Scanner Terminus</title>
+    <meta name="description" content="Real-time Stage 3 breakout scanner and Stage 0 accumulation radar dashboard.">
     
     <!-- Custom Cyberpunk Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,18 +15,15 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- Local Stylesheet -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260618-3">
     <!-- TradingView widget client -->
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 </head>
 <body>
-    <!-- Background Scanline effect & Floating Glow Orbs -->
     <div class="scanlines"></div>
     <div class="glow-orb orb-1"></div>
     <div class="glow-orb orb-2"></div>
-
     <div class="terminal-container">
-        <!-- HEADER -->
         <header class="terminal-header">
             <div class="header-logo">
                 <div class="pulse-icon red-pulse" id="scanner-state-pulse"></div>
@@ -34,18 +32,18 @@
             
             <!-- Navigation Tabs (desktop) -->
             <nav class="header-nav" id="header-nav" style="display: none;">
-                <button class="nav-item active" id="nav-dashboard">
+                <a href="/" class="nav-item" id="nav-dashboard">
                     <i class="fa-solid fa-chart-pie"></i> <span data-translate="DASHBOARD">DASHBOARD</span>
-                </button>
-                <button class="nav-item" id="nav-admin" style="display: none;">
+                </a>
+                <a href="/admin" class="nav-item" id="nav-admin" style="display: none;">
                     <i class="fa-solid fa-user-shield"></i> <span data-translate="ADMIN_CONSOLE">ADMIN_CONSOLE</span>
-                </button>
-                <button class="nav-item" id="nav-compound">
+                </a>
+                <a href="/calculator" class="nav-item" id="nav-compound">
                     <i class="fa-solid fa-calculator"></i> <span data-translate="COMPOUND_INTEREST">COMPOUND INTEREST</span>
-                </button>
-                <button class="nav-item" id="nav-ledger">
+                </a>
+                <a href="/trades" class="nav-item" id="nav-ledger">
                     <i class="fa-solid fa-book"></i> <span data-translate="MY_TRADES_LEDGER">MY_TRADES (🔒)</span>
-                </button>
+                </a>
             </nav>
             
             <!-- Toggles Deck -->
@@ -59,15 +57,15 @@
                     </div>
                     <button type="button" class="btn-logout" id="btn-logout" title="Sign Out">
                         <i class="fa-solid fa-right-from-bracket"></i>
-                    </button>
+                    </a>
                 </div>
 
                 <button type="button" class="btn-control" id="btn-theme-toggle" title="Toggle Light/Dark Mode">
                     <i class="fa-solid fa-moon"></i>
-                </button>
+                </a>
                 <button type="button" class="btn-control" id="btn-lang-toggle" title="Switch Language">
                     <span>ES</span>
-                </button>
+                </a>
             </div>
 
             <div class="header-stats">
@@ -85,8 +83,6 @@
                 </div>
             </div>
         </header>
-
-        <!-- MOBILE STATUS STRIP (visible only on mobile, injected below header) -->
         <div class="mobile-status-strip" id="mobile-status-strip" style="display:none;">
             <div class="mss-item">
                 <span class="mss-dot" id="mss-pulse"></span>
@@ -104,127 +100,6 @@
                 <i class="fa-solid fa-sliders"></i>
             </button>
         </div>
-
-        <!-- MOBILE SETTINGS DRAWER -->
-        <div class="mobile-drawer-overlay" id="mobile-drawer-overlay"></div>
-        <div class="mobile-drawer" id="mobile-drawer">
-            <div class="drawer-handle"></div>
-            <div class="drawer-header">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <i class="fa-solid fa-sliders text-cyan"></i>
-                    <span class="drawer-title" data-translate="CONTROL_DECK">CONTROL_DECK</span>
-                </div>
-                <button class="drawer-close-btn" id="btn-drawer-close"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="drawer-body">
-                <!-- Scanner Engine Controls -->
-                <div class="drawer-section">
-                    <div class="drawer-section-title">SCANNER ENGINE</div>
-                    <div class="drawer-action-row">
-                        <button class="btn btn-primary" id="btn-start-scanner-mobile">
-                            <i class="fa-solid fa-play"></i> <span data-translate="START_SCANNER">START</span>
-                        </button>
-                        <button class="btn btn-danger disabled" id="btn-stop-scanner-mobile" disabled>
-                            <i class="fa-solid fa-stop"></i> <span data-translate="STOP_SCANNER">STOP</span>
-                        </button>
-                    </div>
-                </div>
-                <!-- Quick Stats -->
-                <div class="drawer-section">
-                    <div class="drawer-section-title">LIVE STATS</div>
-                    <div class="drawer-stats-grid">
-                        <div class="drawer-stat">
-                            <span class="drawer-stat-label" data-translate="SYSTEM_STATUS">STATUS</span>
-                            <span class="drawer-stat-value text-red" id="drawer-status-text">OFFLINE</span>
-                        </div>
-                        <div class="drawer-stat">
-                            <span class="drawer-stat-label" data-translate="TRACKED_PAIRS">PAIRS</span>
-                            <span class="drawer-stat-value text-cyan" id="drawer-pairs-count">0</span>
-                        </div>
-                        <div class="drawer-stat">
-                            <span class="drawer-stat-label" data-translate="RATE_LIMIT">RATE</span>
-                            <span class="drawer-stat-value text-green" id="drawer-rate-status">NOMINAL</span>
-                        </div>
-                    </div>
-                </div>
-                <!-- Config Form (mirror of desktop) -->
-                <div class="drawer-section drawer-config">
-                    <div class="drawer-section-title">CONFIGURATION</div>
-                    <div class="form-group">
-                        <label>SCAN INTERVAL (SEC)</label>
-                        <input type="number" id="mob-interval-sec" min="10" max="3600" placeholder="30">
-                    </div>
-                    <div class="form-group">
-                        <label>MAX PAIRS</label>
-                        <input type="number" id="mob-max-pairs" min="5" max="500" placeholder="50">
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>VOL GATE</label>
-                            <div class="input-suffix">
-                                <input type="number" id="mob-vol-threshold" step="0.1" min="1" max="20" placeholder="3.0">
-                                <span class="suffix">x</span>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>PRICE GATE</label>
-                            <div class="input-suffix">
-                                <input type="number" id="mob-price-threshold" step="0.1" min="0.1" max="15" placeholder="1.5">
-                                <span class="suffix">%</span>
-                            </div>
-                        </div>
-                    </div>
-                    <button class="btn btn-secondary btn-block" id="btn-save-settings-mobile">
-                        <i class="fa-solid fa-floppy-disk"></i> SAVE CONFIG
-                    </button>
-                </div>
-                <!-- Exchanges -->  
-                <div class="drawer-section">
-                    <div class="drawer-section-title">EXCHANGES</div>
-                    <div class="drawer-chip-group">
-                        <label class="drawer-chip">
-                            <input type="checkbox" id="mob-chk-binance" checked> BINANCE
-                        </label>
-                        <label class="drawer-chip">
-                            <input type="checkbox" id="mob-chk-bybit"> BYBIT
-                        </label>
-                        <label class="drawer-chip">
-                            <input type="checkbox" id="mob-chk-hyperliquid"> HYPERLIQUID
-                        </label>
-                        <label class="drawer-chip">
-                            <input type="checkbox" id="mob-chk-spot" checked> SPOT
-                        </label>
-                        <label class="drawer-chip">
-                            <input type="checkbox" id="mob-chk-futures"> FUTURES
-                        </label>
-                    </div>
-                </div>
-                <!-- Simulate -->
-                <div class="drawer-section" id="mobile-simulation-section" style="display: none;">
-                    <div class="drawer-section-title">SIMULATE ALERT</div>
-                    <button class="btn btn-neon btn-block" id="btn-sim-mobile">
-                        <i class="fa-solid fa-bolt"></i> FIRE SIMULATED ALERT
-                    </button>
-                </div>
-                <!-- Theme & Lang -->
-                <div class="drawer-section">
-                    <div class="drawer-section-title">APPEARANCE</div>
-                    <div class="drawer-action-row">
-                        <button class="btn btn-secondary" id="btn-theme-mobile">
-                            <i class="fa-solid fa-moon"></i> THEME
-                        </button>
-                        <button class="btn btn-secondary" id="btn-lang-mobile">
-                            <i class="fa-solid fa-language"></i> <span id="drawer-lang-label">ES</span>
-                        </button>
-                        <button class="btn btn-danger" id="btn-logout-mobile">
-                            <i class="fa-solid fa-right-from-bracket"></i> SIGN OUT
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- MAIN GRID LAYOUT -->
         <main class="terminal-grid">
             
             <!-- LEFT COLUMN: CONTROL DECK & SETTINGS -->
@@ -248,33 +123,7 @@
 
                     <!-- Config Settings Form -->
                     <form id="scanner-config-form" class="config-form">
-                        <div class="form-group">
-                            <label for="input-webhook-url">
-                                <span data-translate="WEBHOOK_ALERT_URL">WEBHOOK_ALERT_URL</span>
-                                <span class="tooltip-container">
-                                    <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                    <span class="tooltip-content" data-translate="TOOLTIP_WEBHOOK_URL">Target URL to dispatch JSON alerts when a pump score matches or exceeds the threshold.</span>
-                                </span>
-                            </label>
-                            <div class="input-with-icon">
-                                <i class="fa-solid fa-link text-dim"></i>
-                                <input type="url" id="input-webhook-url" required placeholder="https://endpoint.com/webhook">
-                            </div>
-                        </div>
 
-                        <div class="form-group">
-                            <label for="input-deepseek-key">
-                                <span data-translate="DEEPSEEK_API_KEY">DEEPSEEK_API_KEY (OPTIONAL)</span>
-                                <span class="tooltip-container">
-                                    <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                    <span class="tooltip-content" data-translate="TOOLTIP_DEEPSEEK_KEY">Input your DeepSeek API key to activate the AI Agent Decision Layer. If left empty, local heuristics will evaluate breakouts.</span>
-                                </span>
-                            </label>
-                            <div class="input-with-icon">
-                                <i class="fa-solid fa-key text-dim"></i>
-                                <input type="password" id="input-deepseek-key" placeholder="••••••••">
-                            </div>
-                        </div>
 
                         <div class="form-row">
                             <div class="form-group">
@@ -373,6 +222,69 @@
                             </div>
                         </div>
 
+                        <!-- Advanced Integrations Section (Gated by Role Feature Flag) -->
+                        <div id="advanced-features-section" class="advanced-integrations-panel" style="display: none;">
+                            <div class="divider"></div>
+                            <h3 class="section-title" style="margin-bottom:12px; font-size:11px; letter-spacing:0.5px; color:var(--cyan); text-transform:uppercase;">
+                                <i class="fa-solid fa-network-wired"></i>
+                                <span data-translate="ADVANCED_INTEGRATIONS">ADVANCED INTEGRATIONS</span>
+                            </h3>
+
+                            <!-- Webhook Input (Gated by webhook_enabled) -->
+                            <div class="form-group" id="fg-webhook">
+                                <label for="input-webhook-url">
+                                    <span data-translate="WEBHOOK_ALERT_URL">WEBHOOK_ALERT_URL</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_WEBHOOK_URL">Target URL to dispatch JSON alerts when a pump score matches or exceeds the threshold.</span>
+                                    </span>
+                                </label>
+                                <div class="integration-field">
+                                    <i class="fa-solid fa-link text-dim"></i>
+                                    <input type="url" id="input-webhook-url" placeholder="https://endpoint.com/webhook">
+                                </div>
+                            </div>
+
+                            <!-- LLM Connection Panel (Gated by deepseek_enabled) -->
+                            <div class="form-group" id="fg-deepseek">
+                                <label for="select-llm-provider">
+                                    <span data-translate="LLM_PROVIDER">LLM PROVIDER</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_LLM_PROVIDER">Select the LLM engine to perform signal analysis and formulate trading ideas.</span>
+                                    </span>
+                                </label>
+                                <div class="integration-field">
+                                    <i class="fa-solid fa-robot text-dim"></i>
+                                    <select id="select-llm-provider" class="select-cyber">
+                                        <option value="gemini">Google Gemini</option>
+                                        <option value="claude">Anthropic Claude</option>
+                                        <option value="chatgpt">OpenAI ChatGPT</option>
+                                        <option value="deepseek" selected>DeepSeek V3</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group" id="fg-llm-key-container">
+                                <label for="input-deepseek-key">
+                                    <span data-translate="LLM_API_KEY">LLM API KEY (OPTIONAL)</span>
+                                    <span class="tooltip-container">
+                                        <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_LLM_KEY">Enter your API key for the selected LLM provider. Leave empty to authenticate via native SSO.</span>
+                                    </span>
+                                </label>
+                                <div class="integration-action-row">
+                                    <div class="integration-field">
+                                        <i class="fa-solid fa-key text-dim"></i>
+                                        <input type="password" id="input-deepseek-key" placeholder="••••••••" style="padding-left:30px; width:100%;">
+                                    </div>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-llm-sso">
+                                        <i class="fa-solid fa-right-to-bracket"></i> <span data-translate="SSO_LOGIN">SSO LOGIN</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="form-actions">
                             <button type="submit" class="btn btn-secondary" id="btn-save-settings">
                                 <i class="fa-solid fa-floppy-disk"></i> <span data-translate="SAVE_CONFIGURATION">SAVE_CONFIGURATION</span>
@@ -445,16 +357,101 @@
                         </div>
                     </div>
 
-                    <!-- Chart Panel -->
-                    <div class="chart-panel-wrapper">
-                        <div class="panel-header inner-panel-header">
-                            <i class="fa-solid fa-chart-line text-cyan"></i>
-                            <h3 id="chart-title"><span data-translate="LIVE_CHART">LIVE CHART</span>: <span id="current-chart-ticker">NONE</span></h3>
+                    <!-- AI Trade Ideas Panel -->
+                    <div class="trade-ideas-wrapper panel-body-inner" style="margin-top: 15px; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 4px; background: rgba(0, 0, 0, 0.2); overflow: hidden;">
+                        <div class="panel-header inner-panel-header" style="padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <i class="fa-solid fa-brain text-purple" style="font-size: 13px;"></i>
+                                <h3 id="ideas-panel-title" style="margin: 0; font-size: 11px; letter-spacing: 0.5px; font-family: var(--font-mono); font-weight: bold; color: var(--text-primary);">
+                                    <span data-translate="AI_DECISION_CHAMBER">AI DECISION CHAMBER</span>: 
+                                    <span id="current-ideas-ticker" style="color: var(--cyan);">NONE</span>
+                                </h3>
+                            </div>
                         </div>
-                        <div class="chart-container" id="tv-chart-container">
-                            <div class="chart-placeholder" id="tv-chart-placeholder">
-                                <i class="fa-solid fa-arrow-pointer"></i>
-                                <p data-translate="CHART_PLACEHOLDER">Select a ticker from the watchlist to display its live chart.</p>
+
+                        <!-- Provider selector tabs -->
+                        <div class="provider-tabs" id="provider-tabs" style="display: flex; background: rgba(0,0,0,0.3); border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <button type="button" class="tab-btn active" data-provider="gemini" style="flex:1; background:none; border:none; border-bottom:2px solid var(--cyan); color:var(--text-primary); padding:8px; font-family:var(--font-mono); font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; outline:none;">
+                                <i class="fa-solid fa-sparkles text-cyan" style="font-size: 9px;"></i> Gemini
+                            </button>
+                            <button type="button" class="tab-btn" data-provider="claude" style="flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--text-secondary); padding:8px; font-family:var(--font-mono); font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; outline:none;">
+                                <i class="fa-solid fa-feather text-orange" style="font-size: 9px;"></i> Claude
+                            </button>
+                            <button type="button" class="tab-btn" data-provider="chatgpt" style="flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--text-secondary); padding:8px; font-family:var(--font-mono); font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; outline:none;">
+                                <i class="fa-solid fa-bolt text-green" style="font-size: 9px;"></i> ChatGPT
+                            </button>
+                            <button type="button" class="tab-btn" data-provider="deepseek" style="flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--text-secondary); padding:8px; font-family:var(--font-mono); font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; outline:none;">
+                                <i class="fa-solid fa-robot text-purple" style="font-size: 9px;"></i> DeepSeek
+                            </button>
+                        </div>
+
+                        <div class="ideas-container" id="ideas-content-area" style="padding: 15px; min-height: 200px; display: flex; flex-direction: column; justify-content: center; position: relative;">
+                            <!-- Placeholder -->
+                            <div class="chart-placeholder" id="ideas-placeholder" style="text-align: center; color: var(--text-dim); display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                                <i class="fa-solid fa-brain" style="font-size: 32px; color: rgba(255,255,255,0.15); margin-bottom: 8px;"></i>
+                                <p data-translate="SELECT_SIGNAL_IDEA" style="font-family: var(--font-mono); font-size: 11px; margin:0;">Select any signal to analyze and generate a trading idea.</p>
+                            </div>
+
+                            <!-- Loading State -->
+                            <div class="ideas-loading-state" id="ideas-loading" style="display: none; text-align: center; color: var(--cyan); flex-direction: column; align-items: center; gap: 12px;">
+                                <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 24px; color: var(--cyan);"></i>
+                                <p data-translate="GENERATING_IDEA" style="font-family: var(--font-mono); font-size: 10px; margin:0; letter-spacing:0.5px;">AI is analyzing technical indicators and market structure...</p>
+                            </div>
+
+                            <!-- Lock state -->
+                            <div class="ideas-lock-state" id="ideas-locked" style="display: none; text-align: center;">
+                                <div class="lock-card" style="padding: 20px; border: 1px solid rgba(255, 0, 85, 0.15); background: rgba(255, 0, 85, 0.02); border-radius: 4px; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                                    <i class="fa-solid fa-lock text-red" style="font-size: 28px; margin-bottom: 5px;"></i>
+                                    <h4 data-translate="LLM_LOCK_TITLE" style="margin:0; font-size:12px; color:var(--red); font-family:var(--font-mono); text-transform:uppercase;">LLM INTEGRATION LOCKED</h4>
+                                    <p data-translate="LLM_LOCK_DESC" style="margin:0; font-size:10px; line-height:1.4; color:var(--text-secondary); font-family:var(--font-sans);">AI Trade Ideas require an active LLM integration. Choose your preferred provider (Gemini, Claude, ChatGPT, DeepSeek) and enter your credentials or connect via native SSO in the control deck.</p>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-lock-sso-login" style="margin-top:5px; padding:6px 12px; font-size:10px;">
+                                        <i class="fa-solid fa-key"></i> <span data-translate="SSO_LOGIN">SSO LOGIN</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Main Content -->
+                            <div class="ideas-main-content" id="ideas-main-body" style="display: none; flex-direction: column; gap: 15px;">
+                                <div class="ideas-grid-top" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                                    <div class="idea-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                                        <span class="box-label" data-translate="DIRECTION" style="font-size: 8px; color: var(--text-dim); font-family: var(--font-mono); text-transform: uppercase; margin-bottom: 4px;">DIRECTION</span>
+                                        <span class="box-value" id="idea-val-direction" style="font-size: 12px; font-family: var(--font-mono); font-weight: bold; color: var(--text-primary);">LONG</span>
+                                    </div>
+                                    <div class="idea-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                                        <span class="box-label" data-translate="CONVICTION" style="font-size: 8px; color: var(--text-dim); font-family: var(--font-mono); text-transform: uppercase; margin-bottom: 4px;">CONVICTION</span>
+                                        <span class="box-value text-cyan" id="idea-val-conviction" style="font-size: 12px; font-family: var(--font-mono); font-weight: bold; color: var(--cyan);">90%</span>
+                                    </div>
+                                    <div class="idea-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                                        <span class="box-label" data-translate="TARGET_PRICE" style="font-size: 8px; color: var(--text-dim); font-family: var(--font-mono); text-transform: uppercase; margin-bottom: 4px;">TARGET EXIT</span>
+                                        <span class="box-value text-green" id="idea-val-target" style="font-size: 12px; font-family: var(--font-mono); font-weight: bold; color: var(--green);">$0.00</span>
+                                    </div>
+                                    <div class="idea-box" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 8px; border-radius: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                                        <span class="box-label" data-translate="STOP_LOSS" style="font-size: 8px; color: var(--text-dim); font-family: var(--font-mono); text-transform: uppercase; margin-bottom: 4px;">STOP LOSS</span>
+                                        <span class="box-value text-red" id="idea-val-stop" style="font-size: 12px; font-family: var(--font-mono); font-weight: bold; color: var(--red);">$0.00</span>
+                                    </div>
+                                </div>
+
+                                <div class="ideas-text-section" style="display: flex; flex-direction: column; gap: 6px;">
+                                    <h4 class="section-label" style="margin: 0; font-size: 10px; color: var(--cyan); font-family: var(--font-mono); text-transform: uppercase; display: flex; align-items: center; gap: 6px;">
+                                        <i class="fa-solid fa-chart-pie"></i>
+                                        <span data-translate="AI_EXPLANATION">AI MARKET INSIGHT</span>
+                                    </h4>
+                                    <p class="section-text" id="idea-text-explanation" style="margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--text-secondary); font-family: var(--font-sans); background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.02); padding: 10px; border-radius: 3px;">Analysis data goes here...</p>
+                                </div>
+
+                                <div class="ideas-text-section" style="display: flex; flex-direction: column; gap: 6px;">
+                                    <h4 class="section-label" style="margin: 0; font-size: 10px; color: var(--purple); font-family: var(--font-mono); text-transform: uppercase; display: flex; align-items: center; gap: 6px;">
+                                        <i class="fa-solid fa-list-check"></i>
+                                        <span data-translate="AI_SETUP">INTELLIGENT TRADE SETUP</span>
+                                    </h4>
+                                    <p class="section-text" id="idea-text-setup" style="margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--text-secondary); font-family: var(--font-sans); background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.02); padding: 10px; border-radius: 3px;">Trade setup details go here...</p>
+                                </div>
+
+                                <div class="ideas-action-row" style="display: flex; justify-content: flex-end; margin-top: 5px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-regenerate-idea" style="padding: 4px 10px; font-size: 9px; height: 26px;">
+                                        <i class="fa-solid fa-arrows-rotate"></i> <span data-translate="REGENERATE_IDEA">REGENERATE IDEA</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -539,344 +536,8 @@
             </section>
 
         </main>
-
-        <!-- MOBILE BOTTOM NAV BAR -->
-        <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
-            <button class="mob-nav-btn active" id="mob-nav-dashboard" data-view="dashboard">
-                <i class="fa-solid fa-chart-pie"></i>
-                <span>RADAR</span>
-            </button>
-            <button class="mob-nav-btn" id="mob-nav-accum" data-view="accum">
-                <i class="fa-solid fa-magnifying-glass-chart"></i>
-                <span>ACCUM</span>
-            </button>
-            <button class="mob-nav-btn" id="mob-nav-watchlist" data-view="watchlist">
-                <i class="fa-solid fa-table-list"></i>
-                <span>WATCH</span>
-            </button>
-            <button class="mob-nav-btn" id="mob-nav-compound" data-view="compound">
-                <i class="fa-solid fa-calculator"></i>
-                <span>CALC</span>
-            </button>
-            <button class="mob-nav-btn" id="mob-nav-admin" data-view="admin" style="display:none;">
-                <i class="fa-solid fa-user-shield"></i>
-                <span>ADMIN</span>
-            </button>
-        </nav>
-        
-        <!-- ADMIN PANEL -->
-        <section class="grid-panel admin-console-panel" id="admin-console-panel" style="display: none; margin-top: 15px;">
-            <div class="panel-header" style="justify-content: space-between; align-items: center; width: 100%;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <i class="fa-solid fa-user-shield text-gold"></i>
-                    <h2>ADMIN_CONSOLE // <span class="version-tag text-gold" id="admin-sub-title">USER_ROLES</span></h2>
-                </div>
-                <div class="admin-tab-group" style="display: flex; gap: 10px;">
-                    <button class="btn btn-sm btn-outline active" id="admin-tab-users" style="padding: 4px 10px; font-size: 11px;"><i class="fa-solid fa-users"></i> CMDB USER MANAGER</button>
-                    <button class="btn btn-sm btn-outline" id="admin-tab-features" style="padding: 4px 10px; font-size: 11px;"><i class="fa-solid fa-toggle-on"></i> FEATURE FLAGS</button>
-                    <button class="btn btn-sm btn-outline" id="admin-tab-stats" style="padding: 4px 10px; font-size: 11px;"><i class="fa-solid fa-chart-line"></i> SYSTEM MONITOR</button>
-                </div>
-            </div>
-            <div class="panel-body flex-column">
-                <!-- Tab Content: User Manager -->
-                <div id="admin-view-users" class="admin-sub-view">
-                    <div class="table-wrapper">
-                        <table class="watchlist-table admin-users-table">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Email / ID</th>
-                                    <th>Role Status</th>
-                                    <th>Created At</th>
-                                    <th>DB Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="admin-users-table-body">
-                                <tr>
-                                    <td colspan="5" class="table-placeholder">Loading users database...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- Tab Content: System Diagnostics -->
-                <div id="admin-view-stats" class="admin-sub-view" style="display: none;">
-                    <div class="admin-stats-grid">
-                        <div class="stat-card">
-                            <i class="fa-solid fa-users fa-2x text-blue"></i>
-                            <div class="stat-value" id="stat-total-users">0</div>
-                            <div class="stat-label">TOTAL REGISTERED USERS</div>
-                        </div>
-                        <div class="stat-card">
-                            <i class="fa-solid fa-key fa-2x text-green"></i>
-                            <div class="stat-value" id="stat-active-sessions">0</div>
-                            <div class="stat-label">ACTIVE SESSIONS</div>
-                        </div>
-                        <div class="stat-card">
-                            <i class="fa-solid fa-satellite fa-2x text-orange"></i>
-                            <div class="stat-value" id="stat-monitored-pairs">0</div>
-                            <div class="stat-label">MONITORED PAIRS</div>
-                        </div>
-                        <div class="stat-card">
-                            <i class="fa-solid fa-bell fa-2x text-red"></i>
-                            <div class="stat-value" id="stat-alerts-dispatched">0</div>
-                            <div class="stat-label">ALERTS DISPATCHED</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tab Content: Feature Flags Manager -->
-                <div id="admin-view-features" class="admin-sub-view" style="display: none;">
-                    <div class="table-wrapper">
-                        <table class="watchlist-table admin-features-table">
-                            <thead>
-                                <tr>
-                                    <th style="text-align: left;">Role</th>
-                                    <th>Webhook URL Settings</th>
-                                    <th>DeepSeek AI Analysis</th>
-                                    <th>Compound Calculator</th>
-                                    <th>Trades Ledger</th>
-                                    <th>Intelligence Simulator</th>
-                                </tr>
-                            </thead>
-                            <tbody id="admin-features-table-body">
-                                <tr>
-                                    <td colspan="6" class="table-placeholder">Loading features configuration...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- COMPOUND INTEREST CALCULATOR PANEL -->
-        <div class="compound-interest-grid" id="compound-interest-panel" style="display: none; margin-top: 15px;">
-            <!-- Left panel: Inputs -->
-            <section class="grid-panel inputs-panel">
-                <div class="panel-header">
-                    <i class="fa-solid fa-sliders text-cyan"></i>
-                    <h2 data-translate="INVESTMENT_SETTINGS">INVESTMENT SETTINGS</h2>
-                </div>
-                <div class="panel-body">
-                    <!-- Asset Picker -->
-                    <div class="form-group">
-                        <label><span data-translate="ASSET_CLASS">ASSET CLASS</span></label>
-                        <div class="asset-picker" id="assetPicker">
-                            <button type="button" class="asset-btn active" data-asset="stocks" data-accent="emerald">
-                                <span class="asset-icon">📈</span> <span data-translate="STOCKS">STOCKS</span>
-                            </button>
-                            <button type="button" class="asset-btn" data-asset="crypto" data-accent="purple">
-                                <span class="asset-icon">₿</span> <span data-translate="CRYPTO">CRYPTO</span>
-                            </button>
-                            <button type="button" class="asset-btn" data-asset="realestate" data-accent="orange">
-                                <span class="asset-icon">🏠</span> <span data-translate="REAL_ESTATE">REAL ESTATE</span>
-                            </button>
-                            <button type="button" class="asset-btn" data-asset="savings" data-accent="blue">
-                                <span class="asset-icon">🏦</span> <span data-translate="SAVINGS">SAVINGS</span>
-                            </button>
-                            <button type="button" class="asset-btn" data-asset="custom" data-accent="gold">
-                                <span class="asset-icon">⚙️</span> <span data-translate="CUSTOM">CUSTOM</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Initial Principal -->
-                    <div class="form-group">
-                        <label>
-                            <span data-translate="INITIAL_PRINCIPAL">INITIAL PRINCIPAL</span>
-                            <span class="tooltip-container">
-                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                <span class="tooltip-content" data-translate="TOOLTIP_PRINCIPAL">The starting amount of your investment.</span>
-                            </span>
-                        </label>
-                        <div class="input-with-icon">
-                            <span class="prefix-symbol">$</span>
-                            <input type="text" id="principal" value="10,000" inputmode="numeric" style="padding-left: 20px;">
-                        </div>
-                        <input type="range" id="principalRange" class="slider" min="0" max="1000000" step="1000" value="10000">
-                    </div>
-
-                    <!-- Monthly Contribution -->
-                    <div class="form-group">
-                        <label>
-                            <span data-translate="MONTHLY_CONTRIBUTION">MONTHLY CONTRIBUTION</span>
-                            <span class="tooltip-container">
-                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                <span class="tooltip-content" data-translate="TOOLTIP_CONTRIBUTION">The regular amount you add to the investment every month.</span>
-                            </span>
-                        </label>
-                        <div class="input-with-icon">
-                            <span class="prefix-symbol">$</span>
-                            <input type="text" id="monthly" value="500" inputmode="numeric" style="padding-left: 20px;">
-                        </div>
-                        <input type="range" id="monthlyRange" class="slider" min="0" max="10000" step="50" value="500">
-                    </div>
-
-                    <div class="form-row">
-                        <!-- Annual Return Rate -->
-                        <div class="form-group">
-                            <label>
-                                <span data-translate="ANNUAL_RETURN">ANNUAL RETURN</span>
-                                <span class="tooltip-container">
-                                    <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                    <span class="tooltip-content" data-translate="TOOLTIP_RETURN">The expected average annual rate of return on your investment.</span>
-                                </span>
-                            </label>
-                            <div class="input-suffix">
-                                <input type="text" id="rate" value="8" inputmode="decimal">
-                                <span class="suffix">%</span>
-                            </div>
-                            <input type="range" id="rateRange" class="slider" min="0" max="50" step="0.5" value="8">
-                        </div>
-                        <!-- Inflation Rate -->
-                        <div class="form-group">
-                            <label>
-                                <span data-translate="INFLATION_RATE">INFLATION RATE</span>
-                                <span class="tooltip-container">
-                                    <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                    <span class="tooltip-content" data-translate="TOOLTIP_INFLATION">The expected rate of price increases over time. Decreases purchasing power.</span>
-                                </span>
-                            </label>
-                            <div class="input-suffix">
-                                <input type="text" id="inflation" value="3" inputmode="decimal">
-                                <span class="suffix">%</span>
-                            </div>
-                            <input type="range" id="inflationRange" class="slider" min="0" max="15" step="0.5" value="3">
-                        </div>
-                    </div>
-
-                    <!-- Compound Frequency -->
-                    <div class="form-group">
-                        <label>
-                            <span data-translate="COMPOUND_FREQUENCY">COMPOUND FREQUENCY</span>
-                            <span class="tooltip-container">
-                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                <span class="tooltip-content" data-translate="TOOLTIP_FREQUENCY">How often interest is calculated and added to your balance.</span>
-                            </span>
-                        </label>
-                        <select id="frequency" class="field-select">
-                            <option value="1" data-translate="ANNUALLY">ANNUALLY</option>
-                            <option value="4" data-translate="QUARTERLY">QUARTERLY</option>
-                            <option value="12" data-translate="MONTHLY_FREQ" selected>MONTHLY</option>
-                            <option value="52" data-translate="WEEKLY">WEEKLY</option>
-                            <option value="365" data-translate="DAILY">DAILY</option>
-                        </select>
-                    </div>
-
-                    <!-- Time Horizon -->
-                    <div class="form-group">
-                        <label style="display: flex; justify-content: space-between;">
-                            <span>
-                                <span data-translate="TIME_HORIZON">TIME HORIZON</span>
-                                <span class="tooltip-container">
-                                    <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                    <span class="tooltip-content" data-translate="TOOLTIP_HORIZON">The total number of years you plan to keep your money invested.</span>
-                                </span>
-                            </span>
-                            <span style="font-family: var(--font-mono); color: var(--cyan);"><strong id="yearsLabel">30</strong> <span id="yearsText" data-translate="YEARS">YEARS</span></span>
-                        </label>
-                        <input type="range" id="yearsRange" class="slider" min="1" max="100" step="1" value="30">
-                        <div style="display:flex; justify-content:space-between; font-size:9px; color:var(--text-dim); margin-top:4px; font-family:var(--font-mono);">
-                            <span>1 YR</span><span>25 YR</span><span>50 YR</span><span>75 YR</span><span>100 YR</span>
-                        </div>
-                    </div>
-
-                    <button class="btn btn-primary btn-block" id="btnCalc" style="margin-top: 15px;"><i class="fa-solid fa-calculator"></i> <span data-translate="CALCULATE_GROWTH">CALCULATE GROWTH</span></button>
-                </div>
-            </section>
-
-            <!-- Right panel: Results Visualization -->
-            <section class="grid-panel results-panel">
-                <div class="panel-header" style="justify-content: space-between;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fa-solid fa-chart-line text-cyan"></i>
-                        <h2 data-translate="GROWTH_PROJECTIONS">GROWTH PROJECTIONS</h2>
-                    </div>
-                </div>
-                <div class="panel-body flex-column">
-                    <!-- Summary Cards -->
-                    <div class="compound-summary-cards">
-                        <div class="comp-stat-card">
-                            <span class="comp-stat-label" data-translate="TOTAL_BALANCE">TOTAL BALANCE</span>
-                            <span class="comp-stat-value text-green" id="sumTotal">$0</span>
-                        </div>
-                        <div class="comp-stat-card">
-                            <span class="comp-stat-label" data-translate="TOTAL_INTEREST">TOTAL INTEREST</span>
-                            <span class="comp-stat-value text-cyan" id="sumInterest">$0</span>
-                        </div>
-                        <div class="comp-stat-card">
-                            <span class="comp-stat-label" data-translate="REAL_VALUE_ADJ">REAL VALUE (ADJ. INFLATION)</span>
-                            <span class="comp-stat-value text-orange" id="sumReal">$0</span>
-                        </div>
-                    </div>
-
-                    <!-- Chart Container -->
-                    <div class="compound-chart-container" style="flex: 1; min-height: 250px; position: relative; margin-bottom: 15px;">
-                        <canvas id="compoundChart"></canvas>
-                    </div>
-
-                    <!-- Year Inspector -->
-                    <div class="compound-year-inspector" style="margin-bottom: 15px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                            <span class="comp-stat-label" data-translate="INSPECT_YEAR_PROJECTION">INSPECT YEAR PROJECTION</span>
-                            <span class="text-cyan" id="inspectYearLabel" style="font-family: var(--font-mono); font-weight:bold;">Year 1</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
-                            <input type="range" id="inspectYear" class="slider" min="1" max="30" step="1" value="1" style="flex:1;">
-                        </div>
-                        <div class="inspector-grid" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:10px;">
-                            <div class="inspector-cell">
-                                <span class="inspector-label" data-translate="PRINCIPAL">PRINCIPAL</span>
-                                <span class="inspector-val" id="inspPrincipal">$0</span>
-                            </div>
-                            <div class="inspector-cell">
-                                <span class="inspector-label" data-translate="CONTRIBUTIONS">CONTRIBUTIONS</span>
-                                <span class="inspector-val" id="inspContrib">$0</span>
-                            </div>
-                            <div class="inspector-cell">
-                                <span class="inspector-label" data-translate="INTEREST_GAINS">INTEREST / GAINS</span>
-                                <span class="inspector-val" id="inspInterest">$0</span>
-                            </div>
-                            <div class="inspector-cell">
-                                <span class="inspector-label" data-translate="TOTAL_BALANCE_ABBR">TOTAL BAL</span>
-                                <span class="inspector-val" id="inspTotal">$0</span>
-                            </div>
-                            <div class="inspector-cell">
-                                <span class="inspector-label" data-translate="REAL_VALUE_ABBR">REAL VAL</span>
-                                <span class="inspector-val" id="inspReal">$0</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Year breakdown table toggler & table wrapper -->
-                    <div class="table-toggle-wrap">
-                        <button class="btn btn-sm btn-outline btn-block" id="tableToggle" style="justify-content: space-between;">
-                            <span data-translate="YEAR_BY_YEAR_BREAKDOWN">YEAR-BY-YEAR BREAKDOWN</span>
-                            <i class="fa-solid fa-chevron-down table-toggle-chevron"></i>
-                        </button>
-                    </div>
-                    <div class="table-wrap" id="tableWrap" style="display:none; max-height:200px; overflow-y:auto; border: 1px solid var(--border-color); border-radius: 4px; margin-top:5px;">
-                        <table class="watchlist-table" id="dataTable" style="margin-top:0;">
-                            <thead>
-                                <tr>
-                                    <th style="text-align:left;" data-translate="YEAR">YEAR</th>
-                                    <th data-translate="PRINCIPAL">PRINCIPAL</th>
-                                    <th data-translate="CONTRIBUTIONS">CONTRIBUTIONS</th>
-                                    <th data-translate="INTEREST">INTEREST</th>
-                                    <th data-translate="TOTAL_BALANCE">TOTAL BALANCE</th>
-                                    <th data-translate="REAL_VALUE">REAL VALUE</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tableBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
     </div>
-
-    <!-- LOGIN OVERLAY -->
+    
     <div id="login-overlay" class="login-overlay" style="display: none;">
         <div class="login-card">
             <!-- Dev notification for confirmation/reset codes -->
@@ -1005,26 +666,6 @@
             </div>
         </div>
     </div>
-    
-    <script>
-        function togglePasswordVisibility(id) {
-            var x = document.getElementById(id);
-            var btn = x.nextElementSibling;
-            if (!btn) return;
-            var icon = btn.querySelector('i');
-            if (x.type === "password") {
-                x.type = "text";
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                x.type = "password";
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
-        }
-    </script>
-
-    <!-- TRADES LEDGER MODAL -->
     <div id="ledger-locked-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content glass-card">
             <div class="modal-header">
@@ -1054,8 +695,151 @@
             </div>
         </div>
     </div>
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" style="display:none;">
+            <a href="/#radar" class="mob-nav-btn" id="mob-btn-dash">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>RADAR</span>
+            </a>
+            <a href="/#accum" class="mob-nav-btn" id="mob-btn-accum">
+                <i class="fa-solid fa-magnifying-glass-chart"></i>
+                <span>ACCUM</span>
+            </a>
+            <a href="/#watchlist" class="mob-nav-btn" id="mob-btn-watchlist">
+                <i class="fa-solid fa-table-list"></i>
+                <span>WATCH</span>
+            </a>
+            <a href="/calculator" class="mob-nav-btn" id="mob-btn-calc">
+                <i class="fa-solid fa-calculator"></i>
+                <span>CALC</span>
+            </a>
+            <a href="/trades" class="mob-nav-btn" id="mob-btn-trades">
+                <i class="fa-solid fa-book"></i>
+                <span>MY TRADES</span>
+            </a>
+            <a href="/admin" class="mob-nav-btn" id="mob-btn-admin" style="display:none;">
+                <i class="fa-solid fa-user-shield"></i>
+                <span>ADMIN</span>
+            </a>
+        </nav>
+    <div class="mobile-drawer" id="mobile-drawer">
+            <div class="drawer-handle"></div>
+            <div class="drawer-header">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="fa-solid fa-sliders text-cyan"></i>
+                    <span class="drawer-title" data-translate="CONTROL_DECK">CONTROL_DECK</span>
+                </div>
+                <button class="drawer-close-btn" id="btn-drawer-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="drawer-body">
+                <!-- Scanner Engine Controls -->
+                <div class="drawer-section">
+                    <div class="drawer-section-title">SCANNER ENGINE</div>
+                    <div class="drawer-action-row">
+                        <button class="btn btn-primary" id="btn-start-scanner-mobile">
+                            <i class="fa-solid fa-play"></i> <span data-translate="START_SCANNER">START</span>
+                        </button>
+                        <button class="btn btn-danger disabled" id="btn-stop-scanner-mobile" disabled>
+                            <i class="fa-solid fa-stop"></i> <span data-translate="STOP_SCANNER">STOP</span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Quick Stats -->
+                <div class="drawer-section">
+                    <div class="drawer-section-title">LIVE STATS</div>
+                    <div class="drawer-stats-grid">
+                        <div class="drawer-stat">
+                            <span class="drawer-stat-label" data-translate="SYSTEM_STATUS">STATUS</span>
+                            <span class="drawer-stat-value text-red" id="drawer-status-text">OFFLINE</span>
+                        </div>
+                        <div class="drawer-stat">
+                            <span class="drawer-stat-label" data-translate="TRACKED_PAIRS">PAIRS</span>
+                            <span class="drawer-stat-value text-cyan" id="drawer-pairs-count">0</span>
+                        </div>
+                        <div class="drawer-stat">
+                            <span class="drawer-stat-label" data-translate="RATE_LIMIT">RATE</span>
+                            <span class="drawer-stat-value text-green" id="drawer-rate-status">NOMINAL</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Config Form (mirror of desktop) -->
+                <div class="drawer-section drawer-config">
+                    <div class="drawer-section-title">CONFIGURATION</div>
+                    <div class="form-group">
+                        <label>SCAN INTERVAL (SEC)</label>
+                        <input type="number" id="mob-interval-sec" min="10" max="3600" placeholder="30">
+                    </div>
+                    <div class="form-group">
+                        <label>MAX PAIRS</label>
+                        <input type="number" id="mob-max-pairs" min="5" max="500" placeholder="50">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>VOL GATE</label>
+                            <div class="input-suffix">
+                                <input type="number" id="mob-vol-threshold" step="0.1" min="1" max="20" placeholder="3.0">
+                                <span class="suffix">x</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>PRICE GATE</label>
+                            <div class="input-suffix">
+                                <input type="number" id="mob-price-threshold" step="0.1" min="0.1" max="15" placeholder="1.5">
+                                <span class="suffix">%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary btn-block" id="btn-save-settings-mobile">
+                        <i class="fa-solid fa-floppy-disk"></i> SAVE CONFIG
+                    </button>
+                </div>
+                <!-- Exchanges -->  
+                <div class="drawer-section">
+                    <div class="drawer-section-title">EXCHANGES</div>
+                    <div class="drawer-chip-group">
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-binance" checked> BINANCE
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-bybit"> BYBIT
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-hyperliquid"> HYPERLIQUID
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-spot" checked> SPOT
+                        </label>
+                        <label class="drawer-chip">
+                            <input type="checkbox" id="mob-chk-futures"> FUTURES
+                        </label>
+                    </div>
+                </div>
+                <!-- Simulate -->
+                <div class="drawer-section" id="mobile-simulation-section" style="display: none;">
+                    <div class="drawer-section-title">SIMULATE ALERT</div>
+                    <button class="btn btn-neon btn-block" id="btn-sim-mobile">
+                        <i class="fa-solid fa-bolt"></i> FIRE SIMULATED ALERT
+                    </button>
+                </div>
+                <!-- Theme & Lang -->
+                <div class="drawer-section">
+                    <div class="drawer-section-title">APPEARANCE</div>
+                    <div class="drawer-action-row">
+                        <button class="btn btn-secondary" id="btn-theme-mobile">
+                            <i class="fa-solid fa-moon"></i> THEME
+                        </button>
+                        <button class="btn btn-secondary" id="btn-lang-mobile">
+                            <i class="fa-solid fa-language"></i> <span id="drawer-lang-label">ES</span>
+                        </button>
+                        <button class="btn btn-danger" id="btn-logout-mobile">
+                            <i class="fa-solid fa-right-from-bracket"></i> SIGN OUT
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="app.js"></script>
+    <!-- App scripts -->
+    <script type="module" src="common.js?v=20260618-3"></script>
+    <script type="module" src="app.js?v=20260618-3"></script>
 </body>
 </html>
