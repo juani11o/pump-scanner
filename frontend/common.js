@@ -317,28 +317,34 @@ async function initCommon() {
 // 1. Theme Initialization & Control
 function initTheme() {
     const btnThemeToggle = document.getElementById('btn-theme-toggle');
+    const btnThemeMobile = document.getElementById('btn-theme-mobile');
     const savedTheme = localStorage.getItem('theme') || 'dark';
-    
-    if (savedTheme === 'light') {
-        document.body.classList.add('light-mode');
-        if (btnThemeToggle) btnThemeToggle.innerHTML = '<i class="fa-solid fa-sun"></i>';
-    } else {
-        document.body.classList.remove('light-mode');
-        if (btnThemeToggle) btnThemeToggle.innerHTML = '<i class="fa-solid fa-moon"></i>';
-    }
 
-    if (btnThemeToggle) {
-        btnThemeToggle.addEventListener('click', () => {
-            const isLight = document.body.classList.toggle('light-mode');
-            localStorage.setItem('theme', isLight ? 'light' : 'dark');
-            btnThemeToggle.innerHTML = isLight 
-                ? '<i class="fa-solid fa-sun"></i>' 
-                : '<i class="fa-solid fa-moon"></i>';
-            
-            // Dispatch event for page-specific chart reloads
-            window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: isLight ? 'light' : 'dark' } }));
-        });
-    }
+    const applyTheme = (theme) => {
+        const isLight = theme === 'light';
+        document.documentElement.classList.toggle('light-mode', isLight);
+        document.body.classList.toggle('light-mode', isLight);
+
+        if (btnThemeToggle) {
+            btnThemeToggle.innerHTML = `<i class="fa-solid ${isLight ? 'fa-sun' : 'fa-moon'}"></i>`;
+            btnThemeToggle.setAttribute('aria-pressed', String(isLight));
+        }
+        if (btnThemeMobile) {
+            btnThemeMobile.innerHTML = `<i class="fa-solid ${isLight ? 'fa-sun' : 'fa-moon'}"></i> THEME`;
+            btnThemeMobile.setAttribute('aria-pressed', String(isLight));
+        }
+    };
+
+    const toggleTheme = () => {
+        const nextTheme = document.body.classList.contains('light-mode') ? 'dark' : 'light';
+        localStorage.setItem('theme', nextTheme);
+        applyTheme(nextTheme);
+        window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: nextTheme } }));
+    };
+
+    applyTheme(savedTheme);
+    if (btnThemeToggle) btnThemeToggle.addEventListener('click', toggleTheme);
+    if (btnThemeMobile) btnThemeMobile.addEventListener('click', toggleTheme);
 }
 
 // 2. Language Initialization & Control
@@ -512,8 +518,13 @@ function applyNavigationGates() {
         }
     };
 
-    if (navLedger) navLedger.onclick = handleLedgerClick;
-    if (mobBtnTrades) mobBtnTrades.onclick = handleLedgerClick;
+    if (!hasLedger) {
+        if (navLedger) navLedger.onclick = handleLedgerClick;
+        if (mobBtnTrades) mobBtnTrades.onclick = handleLedgerClick;
+    } else {
+        if (navLedger) navLedger.onclick = null;
+        if (mobBtnTrades) mobBtnTrades.onclick = null;
+    }
 }
 
 function setActiveNavigationTab() {
@@ -598,12 +609,6 @@ function initMobileUX() {
     if (drawerOverlay) drawerOverlay.addEventListener('click', closeDrawer);
     
     // Mirror theme/lang/logout buttons to mobile drawer
-    const btnThemeMobile = document.getElementById('btn-theme-mobile');
-    const btnThemeToggle = document.getElementById('btn-theme-toggle');
-    if (btnThemeMobile && btnThemeToggle) {
-        btnThemeMobile.addEventListener('click', () => btnThemeToggle.click());
-    }
-    
     const btnLangMobile = document.getElementById('btn-lang-mobile');
     const btnLangToggle = document.getElementById('btn-lang-toggle');
     const drawerLangLabel = document.getElementById('drawer-lang-label');
