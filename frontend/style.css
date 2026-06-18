@@ -141,14 +141,16 @@ button {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: linear-gradient(
-        rgba(18, 16, 16, 0) 50%, 
-        rgba(0, 0, 0, 0.25) 50%
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 5px,
+        rgba(0, 0, 0, 0.12) 5px,
+        rgba(0, 0, 0, 0.12) 6px
     );
-    background-size: 100% 4px;
     z-index: 100;
     pointer-events: none;
-    opacity: 0.7;
+    opacity: 0.45;
 }
 
 /* Background Glow Orbs */
@@ -248,6 +250,18 @@ button {
     color: var(--cyan);
     background-color: rgba(0, 240, 255, 0.05);
     box-shadow: 0 0 8px var(--cyan-glow);
+}
+#btn-theme-toggle {
+    width: 34px;
+    padding: 0;
+}
+#btn-theme-toggle i {
+    pointer-events: none;
+}
+#btn-theme-toggle[aria-pressed="true"] {
+    color: var(--yellow);
+    border-color: color-mix(in srgb, var(--yellow) 65%, var(--border-color));
+    background: color-mix(in srgb, var(--yellow) 8%, transparent);
 }
 
 .header-logo {

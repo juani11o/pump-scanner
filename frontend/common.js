@@ -326,12 +326,16 @@ function initTheme() {
         document.body.classList.toggle('light-mode', isLight);
 
         if (btnThemeToggle) {
-            btnThemeToggle.innerHTML = `<i class="fa-solid ${isLight ? 'fa-sun' : 'fa-moon'}"></i>`;
+            const nextModeLabel = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+            btnThemeToggle.innerHTML = `<i class="fa-solid ${isLight ? 'fa-moon' : 'fa-sun'}"></i>`;
             btnThemeToggle.setAttribute('aria-pressed', String(isLight));
+            btnThemeToggle.setAttribute('aria-label', nextModeLabel);
+            btnThemeToggle.title = nextModeLabel;
         }
         if (btnThemeMobile) {
-            btnThemeMobile.innerHTML = `<i class="fa-solid ${isLight ? 'fa-sun' : 'fa-moon'}"></i> THEME`;
+            btnThemeMobile.innerHTML = `<i class="fa-solid ${isLight ? 'fa-moon' : 'fa-sun'}"></i> ${isLight ? 'DARK MODE' : 'LIGHT MODE'}`;
             btnThemeMobile.setAttribute('aria-pressed', String(isLight));
+            btnThemeMobile.setAttribute('aria-label', isLight ? 'Switch to dark mode' : 'Switch to light mode');
         }
     };
 
