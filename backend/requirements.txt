@@ -8,3 +8,6 @@ websockets
 bcrypt
 psycopg2-binary
 python-dotenv
+openai
+anthropic
+google-genai

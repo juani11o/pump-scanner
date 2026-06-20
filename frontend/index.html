@@ -288,26 +288,29 @@
                                 </div>
                             </div>
 
-                            <div class="form-group" id="fg-llm-key-container">
-                                <label for="input-deepseek-key">
-                                    <span data-translate="LLM_API_KEY">LLM API KEY (OPTIONAL)</span>
+                            <div class="form-group" id="fg-llm-keys">
+                                <label>
+                                    <span data-translate="LLM_API_KEYS">LLM API KEYS</span>
                                     <span class="tooltip-container">
                                         <i class="fa-solid fa-circle-question tooltip-trigger"></i>
-                                        <span class="tooltip-content" data-translate="TOOLTIP_LLM_KEY">Enter your API
-                                            key for the selected LLM provider. Leave empty to authenticate via native
-                                            SSO.</span>
+                                        <span class="tooltip-content" data-translate="TOOLTIP_LLM_KEYS">Enter API keys for your selected providers.</span>
                                     </span>
                                 </label>
-                                <div class="integration-action-row">
-                                    <div class="integration-field">
-                                        <i class="fa-solid fa-key text-dim"></i>
-                                        <input type="password" id="input-deepseek-key" placeholder="••••••••"
-                                            style="padding-left:30px; width:100%;">
-                                    </div>
-                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-llm-sso">
-                                        <i class="fa-solid fa-right-to-bracket"></i> <span
-                                            data-translate="SSO_LOGIN">SSO LOGIN</span>
-                                    </button>
+                                <div class="integration-field" style="margin-bottom: 5px;">
+                                    <i class="fa-solid fa-key text-dim"></i>
+                                    <input type="password" id="input-openai-key" placeholder="OpenAI Key (sk-...)" style="padding-left:30px; width:100%;">
+                                </div>
+                                <div class="integration-field" style="margin-bottom: 5px;">
+                                    <i class="fa-solid fa-key text-dim"></i>
+                                    <input type="password" id="input-anthropic-key" placeholder="Anthropic Key (sk-ant-...)" style="padding-left:30px; width:100%;">
+                                </div>
+                                <div class="integration-field" style="margin-bottom: 5px;">
+                                    <i class="fa-solid fa-key text-dim"></i>
+                                    <input type="password" id="input-gemini-key" placeholder="Gemini Key (AIza...)" style="padding-left:30px; width:100%;">
+                                </div>
+                                <div class="integration-field">
+                                    <i class="fa-solid fa-key text-dim"></i>
+                                    <input type="password" id="input-deepseek-key" placeholder="DeepSeek Key (sk-...)" style="padding-left:30px; width:100%;">
                                 </div>
                             </div>
                         </div>

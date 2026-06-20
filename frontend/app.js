@@ -28,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // DOM Elements - Configuration Form
     const configForm = document.getElementById('scanner-config-form');
     const inputWebhookUrl = document.getElementById('input-webhook-url');
+    const inputOpenaiKey = document.getElementById('input-openai-key');
+    const inputAnthropicKey = document.getElementById('input-anthropic-key');
+    const inputGeminiKey = document.getElementById('input-gemini-key');
     const inputDeepseekKey = document.getElementById('input-deepseek-key');
     const chkExchangeBinance = document.getElementById('chk-exchange-binance');
     const chkExchangeBybit = document.getElementById('chk-exchange-bybit');
@@ -244,38 +247,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // LLM inputs gating
         const hasDeepSeek = !!features.deepseek_enabled;
         const selectLlmProvider = document.getElementById('select-llm-provider');
-        const btnLlmSso = document.getElementById('btn-llm-sso');
         const fgDeepseek = document.getElementById('fg-deepseek');
-        const fgLlmKeyContainer = document.getElementById('fg-llm-key-container');
+        const fgLlmKeys = document.getElementById('fg-llm-keys');
         
         console.log('[RBAC] deepseek_enabled=', features.deepseek_enabled, 'hasLLM=', hasDeepSeek);
         
         if (fgDeepseek) fgDeepseek.style.display = hasDeepSeek ? '' : 'none';
-        if (fgLlmKeyContainer) fgLlmKeyContainer.style.display = hasDeepSeek ? '' : 'none';
+        if (fgLlmKeys) fgLlmKeys.style.display = hasDeepSeek ? '' : 'none';
         
         if (selectLlmProvider) {
             if (hasDeepSeek) selectLlmProvider.removeAttribute('disabled');
             else selectLlmProvider.setAttribute('disabled', 'true');
         }
         
-        if (inputDeepseekKey) {
-            if (hasDeepSeek) {
-                inputDeepseekKey.removeAttribute('disabled');
-                inputDeepseekKey.placeholder = "Enter API key or use SSO...";
-                inputDeepseekKey.title = "";
-                if (inputDeepseekKey.parentElement) inputDeepseekKey.parentElement.classList.remove('gated-feature-lock');
-            } else {
-                inputDeepseekKey.setAttribute('disabled', 'true');
-                inputDeepseekKey.value = "";
-                inputDeepseekKey.placeholder = "🔒 LOCKED (UPGRADE REQUIRED)";
-                inputDeepseekKey.title = "LLM INTEGRATION GATED FOR PREMIUM ROLES";
-                if (inputDeepseekKey.parentElement) inputDeepseekKey.parentElement.classList.add('gated-feature-lock');
+        const keyInputs = [inputOpenaiKey, inputAnthropicKey, inputGeminiKey, inputDeepseekKey];
+        keyInputs.forEach(input => {
+            if (input) {
+                if (hasDeepSeek) {
+                    input.removeAttribute('disabled');
+                    input.placeholder = "Enter API key...";
+                    input.title = "";
+                    if (input.parentElement) input.parentElement.classList.remove('gated-feature-lock');
+                } else {
+                    input.setAttribute('disabled', 'true');
+                    input.value = "";
+                    input.placeholder = "🔒 LOCKED (UPGRADE REQUIRED)";
+                    input.title = "LLM INTEGRATION GATED FOR PREMIUM ROLES";
+                    if (input.parentElement) input.parentElement.classList.add('gated-feature-lock');
+                }
             }
-        }
-        if (btnLlmSso) {
-            if (hasDeepSeek) btnLlmSso.removeAttribute('disabled');
-            else btnLlmSso.setAttribute('disabled', 'true');
-        }
+        });
 
         // Advanced Features section gating (webhook & deepseek)
         const advSection = document.getElementById('advanced_features_section') || document.getElementById('advanced-features-section');
@@ -500,8 +501,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (selectLlmProvider) {
                 selectLlmProvider.value = status.settings.llm_provider || 'deepseek';
             }
-            if (inputDeepseekKey && userFeatures.deepseek_enabled) {
-                inputDeepseekKey.value = status.settings.llm_api_key || '';
+            if (userFeatures.deepseek_enabled) {
+                if (inputOpenaiKey) inputOpenaiKey.value = status.settings.openai_api_key || '';
+                if (inputAnthropicKey) inputAnthropicKey.value = status.settings.anthropic_api_key || '';
+                if (inputGeminiKey) inputGeminiKey.value = status.settings.gemini_api_key || '';
+                if (inputDeepseekKey) inputDeepseekKey.value = status.settings.deepseek_api_key || '';
             }
             
             chkExchangeBinance.checked = status.settings.exchanges.includes('binance');
@@ -1000,9 +1004,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectLlmProvider = document.getElementById('select-llm-provider');
         const settings = {
             webhook_url: inputWebhookUrl.value.trim(),
+            openai_api_key: inputOpenaiKey ? inputOpenaiKey.value.trim() : "",
+            anthropic_api_key: inputAnthropicKey ? inputAnthropicKey.value.trim() : "",
+            gemini_api_key: inputGeminiKey ? inputGeminiKey.value.trim() : "",
             deepseek_api_key: inputDeepseekKey ? inputDeepseekKey.value.trim() : "",
             llm_provider: selectLlmProvider ? selectLlmProvider.value : "deepseek",
-            llm_api_key: inputDeepseekKey ? inputDeepseekKey.value.trim() : "",
             interval_sec: parseInt(inputIntervalSec.value),
             volume_multiplier: parseFloat(inputVolumeThreshold.value),
             price_velocity_pct: parseFloat(inputPriceThreshold.value),

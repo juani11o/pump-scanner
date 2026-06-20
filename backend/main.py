@@ -60,13 +60,33 @@ async def on_alert_detected(payload):
             except Exception:
                 pass
 
-scanner = AutonomousScanner(log_queue=log_queue, alert_callback=on_alert_detected)
+async def on_scan_result(result):
+    """Stream each completed market scan to the dashboard immediately."""
+    if active_ws_connections:
+        payload = json.dumps({"type": "SCAN_RESULT", "data": result})
+        dead_connections = []
+        for connection in active_ws_connections:
+            try:
+                await connection.send_text(payload)
+            except Exception:
+                dead_connections.append(connection)
+        for connection in dead_connections:
+            if connection in active_ws_connections:
+                active_ws_connections.remove(connection)
+
+scanner = AutonomousScanner(
+    log_queue=log_queue,
+    alert_callback=on_alert_detected,
+    result_callback=on_scan_result
+)
 
 class SettingsModel(BaseModel):
     webhook_url: str
     deepseek_api_key: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
     llm_provider: str = "deepseek"
-    llm_api_key: str = ""
     interval_sec: int
     volume_multiplier: float
     price_velocity_pct: float
@@ -150,10 +170,9 @@ async def get_current_admin(user: dict = Depends(get_current_user)):
 
 @app.on_event("startup")
 async def startup_event():
-    # If scanner was marked active in persistent settings, start it automatically (State Memory Recovery)
+    # If scanner was marked active in persistent settings, don't start automatically anymore
     if scanner.settings.get("active", False):
-        logger.info("[STARTUP] Auto-starting scanning loop based on saved state...")
-        scanner.start()
+        logger.info("[STARTUP] Scanner was active in saved state, but auto-start is disabled.")
         
     # Start the log broadcast task in the background
     asyncio.create_task(broadcast_logs())
@@ -305,10 +324,7 @@ class TradeIdeaRequestModel(BaseModel):
 async def generate_trade_idea(payload: TradeIdeaRequestModel, current_user: dict = Depends(get_current_user)):
     api_key = payload.api_key
     if not api_key:
-        if payload.provider == scanner.settings.get("llm_provider"):
-            api_key = scanner.settings.get("llm_api_key")
-        elif payload.provider == "deepseek" and scanner.settings.get("deepseek_api_key"):
-            api_key = scanner.settings.get("deepseek_api_key")
+        api_key = scanner.settings.get(f"{payload.provider}_api_key", "")
             
     result = await scanner.evaluate_multi_provider_decision(
         provider=payload.provider,

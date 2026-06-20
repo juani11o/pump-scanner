@@ -6,10 +6,14 @@ import random
 import time
 import aiohttp
 import pandas as pd
+import traceback
 import ccxt.async_support as ccxt
+import ccxt.pro as ccxtpro
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
-
+import openai
+import anthropic
+from google import genai
 # Setup local NLTK path inside project workspace to ensure it works in any environment without global installs
 nltk_data_dir = os.path.join(os.path.dirname(__file__), "..", "nltk_data")
 os.makedirs(nltk_data_dir, exist_ok=True)
@@ -24,7 +28,7 @@ except LookupError:
 logger = logging.getLogger("PumpScanner")
 
 class AutonomousScanner:
-    def __init__(self, state_path=None, log_queue=None, alert_callback=None):
+    def __init__(self, state_path=None, log_queue=None, alert_callback=None, result_callback=None):
         if state_path is None:
             self.state_path = os.path.join(os.path.dirname(__file__), "..", "state.json")
         else:
@@ -32,21 +36,25 @@ class AutonomousScanner:
             
         self.log_queue = log_queue
         self.alert_callback = alert_callback
+        self.result_callback = result_callback
         self.sia = SentimentIntensityAnalyzer()
         
         # Default Scanner Settings
         self.settings = {
             "webhook_url": "https://httpbin.org/post",  # Default test webhook
             "deepseek_api_key": "",
+            "openai_api_key": "",
+            "anthropic_api_key": "",
+            "gemini_api_key": "",
             "llm_provider": "deepseek",
-            "llm_api_key": "",
             "interval_sec": 60,
             "volume_multiplier": 3.0,
             "price_velocity_pct": 1.5,
-            "exchanges": ["hyperliquid"],  # binance, bybit, hyperliquid
-            "instruments": ["future"],    # spot, future
+            "exchanges": ["binance", "bybit", "hyperliquid"],
+            "instruments": ["spot", "future"],
             "active": False,
-            "max_pairs": 50,
+            "max_pairs": 300,
+            "scan_concurrency": 12,
             # Stage 0: Accumulation Radar Settings
             "accum_score_threshold": 55,   # Min score to appear in candidates list
             "accum_alert_threshold": 70,   # Min score to fire a webhook alert
@@ -58,13 +66,25 @@ class AutonomousScanner:
         self.oi_cache = {}         # symbol -> {timestamp: oi_value}
         self.exchange_clients = {}
         self.is_running = False
+        self.stop_event = asyncio.Event()
         self.scan_task = None
         self.sequential_mode = False  # Set to True on 429 to slow down requests
         self.logs_history = []
         self.last_scan_results = []
+        self.live_results = {}
         # Stage 0: Accumulation Radar state
         self.accumulation_candidates = []  # Ranked list of pre-pump candidates
         self.accum_first_detected = {}     # symbol -> ISO timestamp of first detection
+        
+        # New State Caches & Connections
+        self.http_session = None
+        self.exchange_health = {}
+        self.market_cache = {}
+        self.market_cache_timestamp = {}
+        self.ohlcv_cache = {}
+        self.discovery_timestamp = 0
+        self.scan_semaphore = None
+        self.concurrency_limit = self.settings.get("scan_concurrency", 12)
         
         self.load_state()
 
@@ -150,7 +170,7 @@ class AutonomousScanner:
         self.exchange_clients[name] = client
         return client
 
-    async def close_exchanges(self):
+    async def close_exchanges(self, old_session=None):
         clients = list(self.exchange_clients.items())
         self.exchange_clients.clear()
         for name, client in clients:
@@ -158,11 +178,101 @@ class AutonomousScanner:
                 await client.close()
             except Exception as e:
                 logger.error(f"Error closing exchange {name}: {e}")
+        if old_session:
+            try:
+                await old_session.close()
+            except Exception as e:
+                logger.error(f"Error closing old http_session: {e}")
+
+
+    async def get_cached_markets(self, exchange_name, exchange):
+        now = time.time()
+        
+        # Health Check
+        health = self.exchange_health.get(exchange_name, {"failures": 0, "suspended_until": 0})
+        if now < health["suspended_until"]:
+            raise Exception(f"Exchange {exchange_name} is suspended due to repeated failures.")
+            
+        # 30-minute cache TTL
+        if exchange_name in self.market_cache and (now - self.market_cache_timestamp.get(exchange_name, 0)) < 1800:
+            return self.market_cache[exchange_name]
+            
+        try:
+            markets = await exchange.fetch_markets()
+            self.market_cache[exchange_name] = markets
+            self.market_cache_timestamp[exchange_name] = now
+            
+            health["failures"] = 0
+            self.exchange_health[exchange_name] = health
+            return markets
+        except Exception as e:
+            health["failures"] += 1
+            if health["failures"] >= 5:
+                health["suspended_until"] = now + 300
+                self.log(f"Exchange {exchange_name} suspended for 300s due to 5 consecutive failures.", level=logging.ERROR)
+            self.exchange_health[exchange_name] = health
+            raise e
+
+    async def get_cached_ohlcv(self, exchange_name, symbol, limit=50, timeframe='5m'):
+        """Phase 5: OHLCV Cache mechanism."""
+        cache_key = f"{exchange_name}:{symbol}"
+        now = time.time()
+        
+        # Health Check
+        health = self.exchange_health.get(exchange_name, {"failures": 0, "suspended_until": 0})
+        if now < health["suspended_until"]:
+            raise Exception(f"Exchange {exchange_name} is suspended due to repeated failures.")
+        
+        # 30s TTL for OHLCV cache
+        if cache_key in self.ohlcv_cache:
+            cache_entry = self.ohlcv_cache[cache_key]
+            if (now - cache_entry['timestamp']) < 30:
+                return cache_entry['data']
+                
+        exchange = await self.get_exchange(exchange_name)
+        
+        # Phase 6: Pass through semaphore
+        if self.scan_semaphore is None:
+            self.scan_semaphore = asyncio.Semaphore(self.concurrency_limit)
+            
+        try:
+            async with self.scan_semaphore:
+                # CCXT.PRO Hybrid Upgrade (Phase 8): Check if exchange supports watch_ohlcv
+                try:
+                    if hasattr(exchange, 'has') and exchange.has.get('watchOHLCV'):
+                        ohlcv = await exchange.watch_ohlcv(symbol, timeframe, limit=limit)
+                    else:
+                        ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+                except Exception as pro_err:
+                    self.log(f"WebSocket/Fetch failed on {exchange_name}: {pro_err}. Falling back.", level=logging.DEBUG)
+                    ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+            
+            self.ohlcv_cache[cache_key] = {
+                'timestamp': now,
+                'data': ohlcv
+            }
+            health["failures"] = 0
+            self.exchange_health[exchange_name] = health
+            return ohlcv
+        except Exception as e:
+            health["failures"] += 1
+            if health["failures"] >= 5:
+                health["suspended_until"] = now + 300
+                self.log(f"Exchange {exchange_name} suspended for 300s due to 5 consecutive failures fetching OHLCV.", level=logging.ERROR)
+            self.exchange_health[exchange_name] = health
+            raise e
 
     async def initialize_discovery(self):
-        """Stage 1: Exchange Gating & Asset Discovery"""
+        """Stage 1: Exchange Gating & Asset Discovery (Phase 3 Refactor)"""
+        now = time.time()
+        if now - self.discovery_timestamp < 1800 and self.monitored_pairs:
+            return # Skip if ran recently and we have data
+
         self.log("Stage 1: Initializing exchange discovery pipeline...")
         new_monitored = {}
+        
+        if self.scan_semaphore is None:
+            self.scan_semaphore = asyncio.Semaphore(self.concurrency_limit)
         
         for ex_name in self.settings["exchanges"]:
             markets = None
@@ -171,9 +281,11 @@ class AutonomousScanner:
                 try:
                     self.log(f"Fetching markets and tickers for {ex_name.upper()} (Attempt {attempt+1}/3)...")
                     exchange = await self.get_exchange(ex_name)
-                    markets = await exchange.fetch_markets()
+                    async with self.scan_semaphore:
+                        markets = await self.get_cached_markets(ex_name, exchange)
                     try:
-                        tickers = await exchange.fetch_tickers()
+                        async with self.scan_semaphore:
+                            tickers = await exchange.fetch_tickers()
                     except Exception as e:
                         self.log(f"fetch_tickers failed on {ex_name}: {e}. Falling back to default alphabetical tracking.", level=logging.WARNING)
                     break
@@ -232,7 +344,10 @@ class AutonomousScanner:
                 
         if new_monitored:
             self.monitored_pairs = new_monitored
+            self.discovery_timestamp = time.time()
             self.save_state()
+        else:
+            self.log("Discovery failed to find pairs. Retaining previous monitored list.", level=logging.WARNING)
             
         total_discovered = sum(len(v) for v in self.monitored_pairs.values())
         self.log(f"Discovery phase finished. Total tracklist: {total_discovered} pairs across exchanges.")
@@ -266,8 +381,7 @@ class AutonomousScanner:
             if ohlcv_data is not None and len(ohlcv_data) >= 20:
                 ohlcv = ohlcv_data
             else:
-                exchange = await self.get_exchange(exchange_name)
-                ohlcv = await exchange.fetch_ohlcv(symbol, timeframe='5m', limit=50)
+                ohlcv = await self.get_cached_ohlcv(exchange_name, symbol, timeframe='5m', limit=50)
 
             if len(ohlcv) < 20:
                 return None
@@ -455,8 +569,7 @@ class AutonomousScanner:
     async def scan_ticker_velocity(self, exchange_name, symbol):
         """Stage 2: High-Velocity Technical Scan (The Gatekeeper)"""
         try:
-            exchange = await self.get_exchange(exchange_name)
-            ohlcv = await exchange.fetch_ohlcv(symbol, timeframe='5m', limit=50)
+            ohlcv = await self.get_cached_ohlcv(exchange_name, symbol, timeframe='5m', limit=50)
             
             if len(ohlcv) < 20:
                 return None
@@ -520,7 +633,8 @@ class AutonomousScanner:
             
             # If symbol is a spot symbol (e.g. SOL/USDT), try to resolve its perp contract counterpart (e.g. SOL/USDT:USDT)
             target_symbol = symbol
-            markets = await exchange.fetch_markets()
+            async with self.scan_semaphore:
+                        markets = await self.get_cached_markets(ex_name, exchange)
             market_info = next((m for m in markets if m['symbol'] == symbol), None)
             
             if market_info and market_info.get('spot', True):
@@ -538,7 +652,8 @@ class AutonomousScanner:
             try:
                 # ccxt fetch_open_interest_history
                 if hasattr(exchange, 'fetch_open_interest_history'):
-                    oi_history = await exchange.fetch_open_interest_history(target_symbol, timeframe='5m', limit=5)
+                    async with self.scan_semaphore:
+                        oi_history = await exchange.fetch_open_interest_history(target_symbol, timeframe='5m', limit=5)
                     if len(oi_history) >= 2:
                         current_oi = float(oi_history[-1]['openInterestAmount'])
                         past_oi = float(oi_history[0]['openInterestAmount'])
@@ -551,7 +666,8 @@ class AutonomousScanner:
 
             # Fallback: Fetch current OI and compare with self-maintained local cache
             try:
-                current_oi_data = await exchange.fetch_open_interest(target_symbol)
+                async with self.scan_semaphore:
+                    current_oi_data = await exchange.fetch_open_interest(target_symbol)
                 current_oi = float(current_oi_data['openInterestAmount'])
                 now = time.time()
                 
@@ -599,8 +715,8 @@ class AutonomousScanner:
         url = f"https://www.reddit.com/r/cryptocurrency/search.json?q={ticker}&sort=new&limit=20&restrict_sr=on"
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=10) as resp:
+            session = self.http_session if self.http_session else aiohttp.ClientSession()
+            async with session.get(url, headers=headers, timeout=10) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         posts = data.get('data', {}).get('children', [])
@@ -641,8 +757,8 @@ class AutonomousScanner:
         try:
             # Step 1: Search for the coin ID
             search_url = f"https://api.coingecko.com/api/v3/search?query={base_symbol.lower()}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(search_url, timeout=5) as resp:
+            session = self.http_session if self.http_session else aiohttp.ClientSession()
+            async with session.get(search_url, timeout=5) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         coins = data.get("coins", [])
@@ -713,15 +829,74 @@ class AutonomousScanner:
             stop_loss = price * (1 - stop_pct / 100)
 
         # Real API Calls logic placeholder / fallback
-        # Let's mock highly detailed and tailored results if key is missing/invalid, or attempt API calls
         is_mock = not api_key or api_key.startswith("sso_token") or "mock" in api_key.lower() or api_key == "••••••••"
         
-        if not is_mock:
-            # Real API request depending on provider
-            # (In production, you'd map endpoint URLs and payloads here. We implement the structural completions)
-            self.log(f"[AGENT] Sending real API request to {provider.upper()} for {ticker}...")
+        prompt = f"""You are an expert quantitative crypto trader and risk manager.
+Analyze this {signal_type} event for {ticker} at ${price:.4f}.
+Technical Metrics:
+- Volume Multiplier: {metrics.get('volume_multiplier', 1.0)}x
+- Price Velocity: {metrics.get('price_velocity_2vec', 1.0)}%
+- Accumulation Score: {metrics.get('accum_score', 0)}
+- Open Interest Delta: {metrics.get('open_interest_delta_pct', 0.0)}%
+- Sentiment Score: {metrics.get('vader_sentiment_score', 0.5) * 100}%
 
-        # Formulate custom signature results per provider
+Provide a JSON response matching exactly this schema:
+{{
+  "decision": "DISPATCH",
+  "direction": "BUY" or "SELL",
+  "conviction_score": integer (0 to 100),
+  "target_price": float,
+  "stop_loss": float,
+  "reasoning_en": "Reasoning in English (max 2 sentences)",
+  "reasoning_es": "Razonamiento en Español (máx 2 frases)",
+  "setup_en": "Trade setup explanation in English",
+  "setup_es": "Explicación del setup en Español"
+}}"""
+
+        import json
+        llm_result = None
+        if not is_mock:
+            self.log(f"[AGENT] Sending real API request to {provider.upper()} for {ticker}...")
+            try:
+                if provider == "openai":
+                    client = openai.AsyncOpenAI(api_key=api_key)
+                    resp = await client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": prompt}],
+                        response_format={"type": "json_object"}
+                    )
+                    llm_result = json.loads(resp.choices[0].message.content)
+                elif provider == "anthropic":
+                    client = anthropic.AsyncAnthropic(api_key=api_key)
+                    resp = await client.messages.create(
+                        model="claude-3-haiku-20240307",
+                        max_tokens=1000,
+                        messages=[{"role": "user", "content": prompt + "\n\nReturn ONLY raw JSON, no markdown formatting."}]
+                    )
+                    text = resp.content[0].text
+                    if text.startswith("```json"): text = text[7:-3]
+                    llm_result = json.loads(text.strip())
+                elif provider == "gemini":
+                    client = genai.Client(api_key=api_key)
+                    resp = await client.aio.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=prompt,
+                        config=genai.types.GenerateContentConfig(response_mime_type="application/json")
+                    )
+                    llm_result = json.loads(resp.text)
+                else: # deepseek
+                    url = "https://api.deepseek.com/v1/chat/completions"
+                    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+                    payload = {"model": "deepseek-chat", "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
+                    session = self.http_session if self.http_session else aiohttp.ClientSession()
+                    async with session.post(url, json=payload, headers=headers, timeout=10) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            llm_result = json.loads(data["choices"][0]["message"]["content"])
+            except Exception as e:
+                self.log(f"[AGENT] API Error for {provider}: {e}", level=logging.ERROR)
+
+        # Formulate custom signature results per provider (Fallback)
         if provider == "gemini":
             reason_en = f"Google Gemini identified structural breakout indicators for {ticker} at {price:.4f}. Accumulation bands compile compression of BB bandwidth ({metrics.get('bb_squeeze', 0.0):.1f}) indicating imminent expansion. Conviction is supported by orderbook depth."
             reason_es = f"Google Gemini identificó indicadores de ruptura estructural para {ticker} a {price:.4f}. Las bandas de acumulación compilan la compresión del ancho de banda de BB ({metrics.get('bb_squeeze', 0.0):.1f}) lo que indica una expansión inminente."
@@ -732,7 +907,7 @@ class AutonomousScanner:
             reason_es = f"Anthropic Claude marcó señales técnicas en {ticker} a {price:.4f}. El índice de fuerza relativa indica rangos de entrada estables. La defensa de la zona de soporte se ha probado 3 veces, lo que sugiere acumulación."
             setup_en = f"CONSERVATIVE TRADE: Entry range {price * 0.995:.4f} - {price * 1.005:.4f}. Target limit: {target_price:.4f} (+{target_pct}%). Stop: {stop_loss:.4f} (-{stop_pct}%). Do not chase above entry zone."
             setup_es = f"OPERACIÓN CONSERVADORA: Entrada {price * 0.995:.4f} - {price * 1.005:.4f}. Límite objetivo: {target_price:.4f} (+{target_pct}%). Stop: {stop_loss:.4f} (-{stop_pct}%). No persiga el precio fuera de zona."
-        elif provider == "chatgpt":
+        elif provider == "openai":
             reason_en = f"OpenAI ChatGPT detected high-velocity momentum expansion on {ticker} at {price:.4f}. Volume multiplier is currently elevated, aligning with positive social sentiment score of {int(metrics.get('vader_sentiment_score', 0.5)*100)}%."
             reason_es = f"OpenAI ChatGPT detectó una expansión de impulso de alta velocidad en {ticker} a {price:.4f}. El multiplicador de volumen está elevado, alineándose con un sentimiento social positivo del {int(metrics.get('vader_sentiment_score', 0.5)*100)}%."
             setup_en = f"MOMENTUM SETUP: Immediate buy entry at {price:.4f}. Target Exit 1: {target_price:.4f} (+{target_pct}%). Stop Loss: {stop_loss:.4f} (-{stop_pct}%). Trailing stops activated after +3% price growth."
@@ -743,17 +918,30 @@ class AutonomousScanner:
             setup_en = f"STRATEGIC RADAR BUY: Entry range {price:.4f} - {price * 1.01:.4f}. Profit target: {target_price:.4f} (+{target_pct}%). Risk cutoff: {stop_loss:.4f} (-{stop_pct}%). Target reward-to-risk ratio: 3:1."
             setup_es = f"COMPRA DE RADAR ESTRATÉGICO: Entrada {price:.4f} - {price * 1.01:.4f}. Objetivo: {target_price:.4f} (+{target_pct}%). Corte de riesgo: {stop_loss:.4f} (-{stop_pct}%). Relación riesgo-recompensa: 3:1."
 
-        return {
-            "decision": "DISPATCH" if conviction >= 60 else "DROP",
-            "direction": direction,
-            "conviction_score": conviction,
-            "target_price": float(round(target_price, 4)),
-            "stop_loss": float(round(stop_loss, 4)),
-            "reasoning_en": reason_en,
-            "reasoning_es": reason_es,
-            "setup_en": setup_en,
-            "setup_es": setup_es
-        }
+        if llm_result:
+            return {
+                "decision": llm_result.get("decision", "DISPATCH"),
+                "direction": llm_result.get("direction", direction),
+                "conviction_score": llm_result.get("conviction_score", conviction),
+                "target_price": float(llm_result.get("target_price", target_price)),
+                "stop_loss": float(llm_result.get("stop_loss", stop_loss)),
+                "reasoning_en": llm_result.get("reasoning_en", reason_en),
+                "reasoning_es": llm_result.get("reasoning_es", reason_es),
+                "setup_en": llm_result.get("setup_en", setup_en),
+                "setup_es": llm_result.get("setup_es", setup_es)
+            }
+        else:
+            return {
+                "decision": "DISPATCH" if conviction >= 60 else "DROP",
+                "direction": direction,
+                "conviction_score": conviction,
+                "target_price": float(round(target_price, 4)),
+                "stop_loss": float(round(stop_loss, 4)),
+                "reasoning_en": reason_en,
+                "reasoning_es": reason_es,
+                "setup_en": setup_en,
+                "setup_es": setup_es
+            }
 
     async def evaluate_agent_decision(self, exchange_name, ticker, metrics, coingecko):
         """DeepSeek AI Agent Decision Chamber"""
@@ -831,8 +1019,8 @@ Provide a JSON response matching this schema:
         }
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers, timeout=10) as resp:
+            session = self.http_session if self.http_session else aiohttp.ClientSession()
+            async with session.post(url, json=payload, headers=headers, timeout=10) as resp:
                     if resp.status == 200:
                         res_data = await resp.json()
                         content = res_data["choices"][0]["message"]["content"]
@@ -950,8 +1138,8 @@ Provide a JSON response matching this schema:
 
         self.log(f"Sending Webhook to {url}...")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=10) as resp:
+            session = self.http_session if self.http_session else aiohttp.ClientSession()
+            async with session.post(url, json=payload, timeout=10) as resp:
                     if resp.status in [200, 201, 204]:
                         self.log(f"✅ Webhook successfully dispatched for {payload['ticker']}. Status code: {resp.status}")
                     else:
@@ -961,15 +1149,17 @@ Provide a JSON response matching this schema:
 
     async def handle_runtime_fault(self, context, exception):
         """Self-Correction & Automated Diagnostic Handler (Stage 4.1 & 4.3)"""
-        self.log(f"CRITICAL FAULT inside [{context}]: {str(exception)}", level=logging.ERROR)
+        self.log(f"CRITICAL FAULT inside [{context}]: {traceback.format_exc()}", level=logging.ERROR)
         
         # 1. Rate Limit Auto-Correction Protocol
         exc_str = str(exception).lower()
         if "429" in exc_str or "rate limit" in exc_str or "ddos" in exc_str:
-            self.log("Rate limit saturation detected. Activating Rate Limit Auto-Correction...", level=logging.WARNING)
-            self.sequential_mode = True
-            self.log("Slowing down queries: Switching from concurrent gather to sequential loop with 0.5s jitter delay.", level=logging.WARNING)
-            await asyncio.sleep(120)  # Cool down for 2 minutes
+            self.log("Rate limit saturation detected. Activating Adaptive Backoff...", level=logging.WARNING)
+            if self.concurrency_limit > 5:
+                self.concurrency_limit = max(5, self.concurrency_limit - 5)
+                self.scan_semaphore = asyncio.Semaphore(self.concurrency_limit)
+                self.log(f"Reduced concurrency limit to {self.concurrency_limit}", level=logging.WARNING)
+            await asyncio.sleep(5)  # Quick backoff pause
             return
 
         # 2. Connection Recovery Protocol
@@ -991,45 +1181,68 @@ Provide a JSON response matching this schema:
             await self.initialize_discovery()
             
         all_results = []
+        scan_jobs = []
+        
+        # Phase 4: Symbol Prioritization
+        # Collect all candidates first to prioritize them
+        high_priority = {c["symbol"] for c in self.accumulation_candidates}
+        
+        high_priority_jobs = []
+        normal_priority_jobs = []
         
         for ex_name, symbols in self.monitored_pairs.items():
-            # Slice list to avoid overloading free tier API (e.g. limit to settings["max_pairs"])
-            pairs_to_scan = symbols[:self.settings["max_pairs"]]
-            self.log(f"Scanning top {len(pairs_to_scan)} pairs on {ex_name.upper()}...")
-            
-            if self.sequential_mode:
-                # Sequential mode with jitter (after rate limits)
-                for sym in pairs_to_scan:
-                    if not self.is_running:
-                        break
-                    res = await self.scan_ticker_velocity(ex_name, sym)
-                    if res:
-                        all_results.append(res)
+            pairs_to_scan = symbols[:int(self.settings.get("max_pairs", 300))]
+            self.log(f"Sorting {len(pairs_to_scan)} pairs on {ex_name.upper()} into Priority Queues...")
+            for symbol in pairs_to_scan:
+                if symbol in high_priority:
+                    high_priority_jobs.append((ex_name, symbol))
+                else:
+                    normal_priority_jobs.append((ex_name, symbol))
+                    
+        # Process high priority first
+        scan_jobs.extend(high_priority_jobs)
+        scan_jobs.extend(normal_priority_jobs)
+        self.log(f"Queued {len(high_priority_jobs)} High Priority and {len(normal_priority_jobs)} Normal Priority jobs.")
+
+        concurrency = 1 if self.sequential_mode else max(1, int(self.settings.get("scan_concurrency", 12)))
+        queue = asyncio.Queue()
+        for job in scan_jobs:
+            queue.put_nowait(job)
+
+        async def worker():
+            while self.is_running:
+                try:
+                    ex_name, symbol = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                try:
+                    result = await self.scan_ticker_velocity(ex_name, symbol)
+                    if result:
+                        result["exchange"] = ex_name
+                        all_results.append(result)
+                        key = f"{ex_name}:{symbol}"
+                        self.live_results[key] = result
+                        self.last_scan_results = list(self.live_results.values())
+                        if self.result_callback:
+                            callback_result = self.result_callback(result)
+                            if asyncio.iscoroutine(callback_result):
+                                await callback_result
+                finally:
+                    queue.task_done()
+                if self.sequential_mode:
                     await asyncio.sleep(random.uniform(0.2, 0.5))
-            else:
-                # Concurrent async mode (Stage 2)
-                tasks = [self.scan_ticker_velocity(ex_name, sym) for sym in pairs_to_scan]
-                results = await asyncio.gather(*tasks)
-                all_results.extend([r for r in results if r is not None])
+
+        workers = [asyncio.create_task(worker()) for _ in range(min(concurrency, len(scan_jobs)))]
+        if workers:
+            await asyncio.gather(*workers)
                 
         # If successfully processed without exceptions, disable rate limit mode
         if len(all_results) > 0 and self.sequential_mode:
             self.sequential_mode = False
             self.log("Rate limits stabilized. Restoring high-velocity parallel queries.")
             
-        # Filter results to strictly contain:
-        # 1. Top 10 pairs by volume across monitored exchanges
-        # 2. Any pair that has an active breakout
-        top_10_symbols = set()
-        for ex_name, symbols in self.monitored_pairs.items():
-            top_10_symbols.update(symbols[:10])
-            
-        filtered_results = []
-        for res in all_results:
-            if res["symbol"] in top_10_symbols or res.get("is_breakout", False):
-                filtered_results.append(res)
-                
-        self.last_scan_results = filtered_results
+        filtered_results = all_results
+        self.last_scan_results = list(self.live_results.values())
 
         # ── Build & rank the Stage 0 Accumulation Candidates list ──────────
         accum_threshold = float(self.settings.get("accum_score_threshold", 55))
@@ -1075,7 +1288,8 @@ Provide a JSON response matching this schema:
         return filtered_results
 
     async def scanner_main_loop(self):
-        self.is_running = True
+        if self.http_session is None:
+            self.http_session = aiohttp.ClientSession()
         self.log("Autonomous Scanner main loop started.")
         
         while self.is_running:
@@ -1085,16 +1299,26 @@ Provide a JSON response matching this schema:
             except Exception as e:
                 await self.handle_runtime_fault("Global Main Loop Container", e)
                 
-            elapsed = time.time() - start_time
-            sleep_time = max(1.0, self.settings["interval_sec"] - elapsed)
+            cycle_duration = time.time() - start_time
+            sleep_time = max(1.0, self.settings.get("interval_sec", 60) - cycle_duration)
             
-            self.log(f"Scan cycle finished. Sleeping for {sleep_time:.1f} seconds.")
+            # Phase 11 Recovery: Slowly increase concurrency back to limit if stable
+            target_limit = self.settings.get("scan_concurrency", 12)
+            if self.concurrency_limit < target_limit:
+                self.concurrency_limit = min(target_limit, self.concurrency_limit + 1)
+                self.scan_semaphore = asyncio.Semaphore(self.concurrency_limit)
+                self.log(f"Auto-recovery: Increased concurrency limit to {self.concurrency_limit}")
             
-            # Sleep in tiny increments so we can exit quickly if stopped
-            for _ in range(int(sleep_time)):
-                if not self.is_running:
-                    break
-                await asyncio.sleep(1.0)
+            self.log(f"Cycle completed in {cycle_duration:.2f}s. Sleeping for {sleep_time:.1f}s.")
+            
+            # Use an Event to sleep, allowing instant interruption when stopped
+            try:
+                if sleep_time > 0:
+                    if not hasattr(self, 'stop_event'):
+                        self.stop_event = asyncio.Event()
+                    await asyncio.wait_for(self.stop_event.wait(), timeout=sleep_time)
+            except asyncio.TimeoutError:
+                pass
                 
         self.log("Autonomous Scanner main loop stopped.")
 
@@ -1103,6 +1327,10 @@ Provide a JSON response matching this schema:
             self.log("Scanner is already running.")
             return False
             
+        self.is_running = True  # Set immediately for snappy UI response
+        if not hasattr(self, 'stop_event'):
+            self.stop_event = asyncio.Event()
+        self.stop_event.clear()
         self.settings["active"] = True
         self.save_state()
         self.scan_task = asyncio.create_task(self.scanner_main_loop())
@@ -1114,11 +1342,16 @@ Provide a JSON response matching this schema:
             return False
             
         self.is_running = False
+        if hasattr(self, 'stop_event'):
+            self.stop_event.set()
         self.settings["active"] = False
         self.save_state()
         if self.scan_task:
             self.scan_task.cancel()
             self.scan_task = None
+            
+        old_session = self.http_session
+        self.http_session = None
         # Fire async task to clean up connections
-        asyncio.create_task(self.close_exchanges())
+        asyncio.create_task(self.close_exchanges(old_session))
         return True
