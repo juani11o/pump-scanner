@@ -44,6 +44,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    if scanner.settings.get("active", False):
+        logger.info("Auto-starting scanner based on previous state...")
+        scanner.start()
+
 # Shared logs queue for websocket broadcasting
 log_queue = asyncio.Queue()
 
@@ -94,8 +100,8 @@ class SettingsModel(BaseModel):
     instruments: list[str]
     max_pairs: int
     # Stage 0: Accumulation Radar
-    accum_score_threshold: float = 55.0
-    accum_alert_threshold: float = 70.0
+    accum_score_threshold: float = 25.0
+    accum_alert_threshold: float = 50.0
     enable_accumulation_alerts: bool = True
 
 class RoleUpdateModel(BaseModel):
@@ -643,8 +649,9 @@ async def get_system_stats(current_admin: dict = Depends(get_current_admin)):
     total_users = users_db.db_query("SELECT COUNT(*) as count FROM users", fetch="scalar")
     active_sessions = users_db.db_query("SELECT COUNT(*) as count FROM sessions", fetch="scalar")
     
-    monitored_count = sum(len(v) for v in scanner.monitored_pairs.values())
-    alerts_count = len(scanner.logs_history)
+    from backend.cache.markets import TRACKED_MARKETS
+    monitored_count = sum(len(v) for v in TRACKED_MARKETS.values())
+    alerts_count = 0  # no longer tracking global count
     
     return {
         "total_users": total_users,

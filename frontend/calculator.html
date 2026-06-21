@@ -26,13 +26,27 @@
     <div class="glow-orb orb-2"></div>
     <div class="terminal-container">
         <header class="terminal-header">
-            <div class="header-logo">
-                <div class="pulse-icon red-pulse" id="scanner-state-pulse"></div>
-                <h1>PUMP_SCANNER//<span class="version-tag">v2.2.0-ACCUM</span></h1>
+            <!-- LEFT GROUP -->
+            <div class="header-group-left" style="display: flex; gap: 32px; align-items: center;">
+                <div class="header-logo">
+                    <div class="pulse-icon red-pulse" id="scanner-state-pulse"></div>
+                    <h1>PUMP_SCANNER//<span class="version-tag">v2.2.0-ACCUM</span></h1>
+                </div>
+                
+                <div class="header-stats-inline" style="display: flex; gap: 32px;">
+                    <div class="stat-box" style="align-items: flex-start;">
+                        <span class="stat-label" data-translate="RATE_LIMIT">RATE_LIMIT</span>
+                        <span class="stat-value text-green" id="rate-limit-status">NOMINAL</span>
+                    </div>
+                    <div class="stat-box" style="align-items: flex-start;">
+                        <span class="stat-label" data-translate="TRACKED_PAIRS">TRACKED_PAIRS</span>
+                        <span class="stat-value text-cyan" id="tracked-pairs-count">0</span>
+                    </div>
+                </div>
             </div>
-            
-            <!-- Navigation Tabs (desktop) -->
-            <nav class="header-nav" id="header-nav" style="display: none;">
+
+            <!-- Navigation Tabs (desktop) - CENTER -->
+            <nav class="header-nav" id="header-nav" style="display: none; margin: 0 auto;">
                 <a href="/" class="nav-item" id="nav-dashboard">
                     <i class="fa-solid fa-chart-pie"></i> <span data-translate="DASHBOARD">DASHBOARD</span>
                 </a>
@@ -46,41 +60,32 @@
                     <i class="fa-solid fa-book"></i> <span data-translate="MY_TRADES_LEDGER">MY_TRADES (🔒)</span>
                 </a>
             </nav>
-            
-            <!-- Toggles Deck -->
-            <div class="header-controls">
-                <!-- User Profile Badge -->
-                <div class="user-profile-badge" id="user-profile-badge" style="display: none;">
-                    <img src="" alt="Avatar" id="user-avatar" class="user-avatar">
-                    <div class="user-info-text">
-                        <span id="user-name" class="user-name">Loading...</span>
-                        <span id="user-role-badge" class="badge">USER</span>
+
+            <!-- RIGHT GROUP -->
+            <div class="header-group-right" style="display: flex; gap: 32px; align-items: center;">
+                <div class="header-controls" style="margin: 0;">
+                    <div class="user-profile-badge" id="user-profile-badge" style="display: none;">
+                        <img src="" alt="Avatar" id="user-avatar" class="user-avatar">
+                        <div class="user-info-text">
+                            <span id="user-name" class="user-name">Loading...</span>
+                            <span id="user-role-badge" class="badge">USER</span>
+                        </div>
+                        <button type="button" class="btn-logout" id="btn-logout" title="Sign Out">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
                     </div>
-                    <button type="button" class="btn-logout" id="btn-logout" title="Sign Out">
-                        <i class="fa-solid fa-right-from-bracket"></i>
-                    </a>
+
+                    <button type="button" class="btn-control" id="btn-theme-toggle" title="Toggle Light/Dark Mode">
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
+                    <button type="button" class="btn-control" id="btn-lang-toggle" title="Switch Language">
+                        <span>ES</span>
+                    </button>
                 </div>
-
-                <button type="button" class="btn-control" id="btn-theme-toggle" title="Toggle Light/Dark Mode">
-                    <i class="fa-solid fa-moon"></i>
-                </button>
-                <button type="button" class="btn-control" id="btn-lang-toggle" title="Switch Language">
-                    <span>ES</span>
-                </a>
-            </div>
-
-            <div class="header-stats">
-                <div class="stat-box">
+                
+                <div class="stat-box" style="align-items: flex-end;">
                     <span class="stat-label" data-translate="SYSTEM_STATUS">SYSTEM_STATUS</span>
                     <span class="stat-value text-red" id="system-status-text">OFFLINE</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label" data-translate="TRACKED_PAIRS">TRACKED_PAIRS</span>
-                    <span class="stat-value text-cyan" id="tracked-pairs-count">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label" data-translate="RATE_LIMIT">RATE_LIMIT</span>
-                    <span class="stat-value text-green" id="rate-limit-status">NOMINAL</span>
                 </div>
             </div>
         </header>

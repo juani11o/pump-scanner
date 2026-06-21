@@ -4,7 +4,7 @@
 
 import { currentUser as commonUser, currentLang } from './common.js';
 
-document.addEventListener('DOMContentLoaded', () => {
+function setupApp() {
     // API endpoint references
     const API_BASE = `${window.location.protocol}//${window.location.host}`;
     const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // DOM Elements - Watchlist & Console
     const inputSearchPairs = document.getElementById('input-search-pairs');
-    const watchlistTableBody = document.getElementById('watchlist-table-body');
+    const trackedAssetsTableBody = document.getElementById('tracked-assets-table-body');
     const consoleViewport = document.getElementById('console-viewport');
 
     // DOM Elements - Pipeline Schematic Nodes & Connectors
@@ -187,8 +187,8 @@ document.addEventListener('DOMContentLoaded', () => {
             navAdmin.style.display = isAdmin ? 'inline-block' : 'none';
         }
         
-        // Simulation panel/deck gating (admins only & simulation feature flag enabled)
-        const hasSimulation = isAdmin && !!features.simulation_enabled;
+        // Simulation panel/deck gating
+        const hasSimulation = true; // Enabled for everyone based on user request
         const simulationDeck = document.getElementById('simulation_deck') || document.getElementById('simulation-deck');
         const mobileSimulationSection = document.getElementById('mobile-simulation-section');
         if (simulationDeck) {
@@ -198,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mobileSimulationSection.style.display = hasSimulation ? 'block' : 'none';
         }
         
-        // Disable/enable admin controls
+        // Disable/enable controls
         const adminElements = [
             btnStartScanner,
             btnStopScanner,
@@ -209,14 +209,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         adminElements.forEach(btn => {
             if (btn) {
-                if (isAdmin) {
-                    btn.removeAttribute('disabled');
-                    btn.classList.remove('disabled');
-                } else {
-                    btn.setAttribute('disabled', 'true');
-                    btn.classList.add('disabled');
-                    btn.title = "ADMIN PRIVILEGE REQUIRED";
-                }
+                btn.removeAttribute('disabled');
+                btn.classList.remove('disabled');
+                btn.title = "";
             }
         });
         
@@ -280,10 +275,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Advanced Features section gating (webhook & deepseek)
         const advSection = document.getElementById('advanced_features_section') || document.getElementById('advanced-features-section');
-        if (advSection) {
+        const advForm = document.getElementById('advanced-integrations-form');
+        
+    const logsPanel = document.querySelector('.console-logs');
+    if (logsPanel) {
+        logsPanel.style.display = isAdmin ? 'block' : 'none';
+    }
+    if (advSection) {
             // Show if either webhook or deepseek is enabled for the user
-            const showAdv = !!features.webhook_enabled || !!features.deepseek_enabled;
+            const showAdv = isAdmin || !!features.webhook_enabled || !!features.deepseek_enabled;
             advSection.style.display = showAdv ? '' : 'none';
+            if (advForm) advForm.style.display = showAdv ? 'block' : 'none';
         }
         const hasCalculator = !!features.calculator_enabled;
         const navCompound = document.getElementById('nav-compound');
@@ -435,6 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Append raw lines to Console Viewport
     function appendConsoleLine(message, styleClass = "line-info") {
+        if (!consoleViewport) return;
         const line = document.createElement('div');
         line.className = `console-line ${styleClass}`;
         line.innerText = message;
@@ -458,25 +461,41 @@ document.addEventListener('DOMContentLoaded', () => {
     function syncSystemState(status) {
         // Status Indicators
         if (status.active) {
-            systemStatusText.innerText = "ONLINE";
-            systemStatusText.className = "stat-value text-green";
+            if (systemStatusText) {
+                systemStatusText.innerText = "ONLINE";
+                systemStatusText.className = "stat-value text-green";
+            }
             
-            scannerStatePulse.className = "pulse-icon green-pulse";
+            if (scannerStatePulse) {
+                scannerStatePulse.className = "pulse-icon green-pulse";
+            }
             
-            btnStartScanner.classList.add('disabled');
-            btnStartScanner.disabled = true;
-            btnStopScanner.classList.remove('disabled');
-            btnStopScanner.disabled = false;
+            if (btnStartScanner) {
+                btnStartScanner.classList.add('disabled');
+                btnStartScanner.disabled = true;
+            }
+            if (btnStopScanner) {
+                btnStopScanner.classList.remove('disabled');
+                btnStopScanner.disabled = false;
+            }
         } else {
-            systemStatusText.innerText = "OFFLINE";
-            systemStatusText.className = "stat-value text-red";
+            if (systemStatusText) {
+                systemStatusText.innerText = "OFFLINE";
+                systemStatusText.className = "stat-value text-red";
+            }
             
-            scannerStatePulse.className = "pulse-icon red-pulse";
+            if (scannerStatePulse) {
+                scannerStatePulse.className = "pulse-icon red-pulse";
+            }
             
-            btnStartScanner.classList.remove('disabled');
-            btnStartScanner.disabled = false;
-            btnStopScanner.classList.add('disabled');
-            btnStopScanner.disabled = true;
+            if (btnStartScanner) {
+                btnStartScanner.classList.remove('disabled');
+                btnStartScanner.disabled = false;
+            }
+            if (btnStopScanner) {
+                btnStopScanner.classList.add('disabled');
+                btnStopScanner.disabled = true;
+            }
         }
 
         // Stats
@@ -508,17 +527,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (inputDeepseekKey) inputDeepseekKey.value = status.settings.deepseek_api_key || '';
             }
             
-            chkExchangeBinance.checked = status.settings.exchanges.includes('binance');
-            chkExchangeBybit.checked = status.settings.exchanges.includes('bybit');
-            chkExchangeHyperliquid.checked = status.settings.exchanges.includes('hyperliquid');
+            if (chkExchangeBinance) chkExchangeBinance.checked = status.settings.exchanges.includes('binance');
+            if (chkExchangeBybit) chkExchangeBybit.checked = status.settings.exchanges.includes('bybit');
+            if (chkExchangeHyperliquid) chkExchangeHyperliquid.checked = status.settings.exchanges.includes('hyperliquid');
             
-            chkInstSpot.checked = status.settings.instruments.includes('spot');
-            chkInstFuture.checked = status.settings.instruments.includes('future');
+            if (chkInstSpot) chkInstSpot.checked = status.settings.instruments.includes('spot');
+            if (chkInstFuture) chkInstFuture.checked = status.settings.instruments.includes('future');
             
-            inputIntervalSec.value = status.settings.interval_sec;
-            inputMaxPairs.value = status.settings.max_pairs;
-            inputVolumeThreshold.value = status.settings.volume_multiplier;
-            inputPriceThreshold.value = status.settings.price_velocity_pct;
+            if (inputIntervalSec) inputIntervalSec.value = status.settings.interval_sec;
+            if (inputMaxPairs) inputMaxPairs.value = status.settings.max_pairs;
+            if (inputVolumeThreshold) inputVolumeThreshold.value = status.settings.volume_multiplier;
+            if (inputPriceThreshold) inputPriceThreshold.value = status.settings.price_velocity_pct;
         }
     }
 
@@ -569,7 +588,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? (currentLang === 'en' ? "Awaiting first scan loop results..." : "Esperando primeros resultados del escaneo...")
                 : (currentLang === 'en' ? "No tickers match query." : "Ningún par coincide con la búsqueda.");
 
-            watchlistTableBody.innerHTML = `
+            trackedAssetsTableBody.innerHTML = `
                 <tr>
                     <td colspan="5" class="table-placeholder">
                         ${placeholderText}
@@ -578,7 +597,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        watchlistTableBody.innerHTML = '';
+        trackedAssetsTableBody.innerHTML = '';
         filtered.forEach(item => {
             const row = document.createElement('tr');
             if (item.is_breakout) {
@@ -609,7 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             row.style.cursor = 'pointer';
             row.addEventListener('click', () => {
-                document.querySelectorAll('#watchlist-table-body tr').forEach(r => r.classList.remove('selected-row'));
+                document.querySelectorAll('#tracked-assets-table-body tr').forEach(r => r.classList.remove('selected-row'));
                 row.classList.add('selected-row');
                 loadAITradeIdea(item.symbol, "breakout", {
                     price: item.price,
@@ -627,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td class="${velocityClass}">${velocityText}</td>
                 <td>${statusCell}</td>
             `;
-            watchlistTableBody.appendChild(row);
+            trackedAssetsTableBody.appendChild(row);
         });
     }
 
@@ -723,7 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Wire Interactive Watchlist Headers Sorting click handlers
-    document.querySelectorAll('.watchlist-table th.sortable').forEach(th => {
+    document.querySelectorAll('.tracked-assets-table th.sortable').forEach(th => {
         th.addEventListener('click', () => {
             const key = th.getAttribute('data-sort');
             if (sortKey === key) {
@@ -735,7 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Sync sort arrows UI classes
-            document.querySelectorAll('.watchlist-table th.sortable').forEach(header => {
+            document.querySelectorAll('.tracked-assets-table th.sortable').forEach(header => {
                 header.classList.remove('asc', 'desc');
                 const icon = header.querySelector('i');
                 if (icon) {
@@ -852,7 +871,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const conviction = alertData.agent.conviction_score;
             agentHTML = `
                 <div class="alert-agent-thought">
-                    <span class="agent-title"><i class="fa-solid fa-robot"></i> DEEPSEEK_AGENT:</span>
+                    <span class="agent-title"><i class="fa-solid fa-robot"></i> SIGNAL NOTE:</span>
                     <p class="agent-thought">${reasoning}</p>
                     <div class="agent-meta">
                         <span>CONVICTION:</span>
@@ -923,137 +942,113 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------------------- //
 
     // START SCANNER
-    btnStartScanner.addEventListener('click', async () => {
-        try {
-            const resp = await fetch(`${API_BASE}/api/start`, { method: 'POST' });
-            if (resp.ok) {
-                const msg = currentLang === 'en'
-                    ? "[SYSTEM] Scan initiation command received."
-                    : "[SISTEMA] Comando de inicio de escaneo recibido.";
-                appendConsoleLine(msg, "line-success");
-                if (ws) ws.send("refresh");
+    if (btnStartScanner) {
+        btnStartScanner.addEventListener('click', async () => {
+            try {
+                const resp = await fetch(`${API_BASE}/api/start`, { method: 'POST' });
+                if (resp.ok) {
+                    const msg = currentLang === 'en'
+                        ? "[SYSTEM] Scan initiation command received."
+                        : "[SISTEMA] Comando de inicio de escaneo recibido.";
+                    appendConsoleLine(msg, "line-success");
+                    if (ws) ws.send("refresh");
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] Failure: ${e.message}`, "line-error");
             }
-        } catch (e) {
-            appendConsoleLine(`[SYSTEM] Failure: ${e.message}`, "line-error");
-        }
-    });
+        });
+    }
 
     // STOP SCANNER
-    btnStopScanner.addEventListener('click', async () => {
-        try {
-            const resp = await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
-            if (resp.ok) {
-                const msg = currentLang === 'en'
-                    ? "[SYSTEM] Scan termination command received."
-                    : "[SISTEMA] Comando de parada de escaneo recibido.";
-                appendConsoleLine(msg, "line-warn");
-                if (ws) ws.send("refresh");
+    if (btnStopScanner) {
+        btnStopScanner.addEventListener('click', async () => {
+            try {
+                const resp = await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
+                if (resp.ok) {
+                    const msg = currentLang === 'en'
+                        ? "[SYSTEM] Scan termination command received."
+                        : "[SISTEMA] Comando de parada de escaneo recibido.";
+                    appendConsoleLine(msg, "line-warn");
+                    if (ws) ws.send("refresh");
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] Failure: ${e.message}`, "line-error");
             }
-        } catch (e) {
-            appendConsoleLine(`[SYSTEM] Failure: ${e.message}`, "line-error");
-        }
-    });
+        });
+    }
 
-    // TRIGGER SIMULATION ALERT
-    btnTriggerSimulation.addEventListener('click', async () => {
-        try {
-            btnTriggerSimulation.disabled = true;
-            btnTriggerSimulation.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${currentLang === 'en' ? 'DISPATCHING...' : 'DESPACHANDO...'}`;
+    // SAVE SETTINGS (Moved to Admin Console)
+    
+    // ADVANCED INTEGRATIONS FORM (Dashboard)
+    const advIntegrationsForm = document.getElementById('advanced-integrations-form');
+    if (advIntegrationsForm) {
+        advIntegrationsForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
             
-            const resp = await fetch(`${API_BASE}/api/trigger_simulation`, { method: 'POST' });
-            if (resp.ok) {
-                const msg = currentLang === 'en'
-                    ? "[SYSTEM] Simulation triggered. Emitting mock Stage 3 telemetry."
-                    : "[SISTEMA] Simulación activada. Emitiendo telemetría simulada de Etapa 3.";
-                appendConsoleLine(msg, "line-success");
+            const btnSaveInt = document.getElementById('btn-save-integrations');
+            try {
+                if (btnSaveInt) {
+                    btnSaveInt.disabled = true;
+                    btnSaveInt.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> SAVING...`;
+                }
+
+                // 1. Fetch current full settings so we don't overwrite non-integration settings
+                const statusResp = await fetch(`${API_BASE}/api/status`);
+                if (!statusResp.ok) throw new Error("Could not fetch current settings.");
+                const statusData = await statusResp.json();
+                const currentSettings = statusData.settings;
+
+                // 2. Extract integration inputs
+                const inputWebhookUrl = document.getElementById('input-webhook-url');
+                const selectLlmProvider = document.getElementById('select-llm-provider');
+                const inputOpenaiKey = document.getElementById('input-openai-key');
+                const inputAnthropicKey = document.getElementById('input-anthropic-key');
+                const inputGeminiKey = document.getElementById('input-gemini-key');
+                const inputDeepseekKey = document.getElementById('input-deepseek-key');
+
+                const updatedSettings = {
+                    ...currentSettings,
+                    webhook_url: inputWebhookUrl ? inputWebhookUrl.value.trim() : currentSettings.webhook_url,
+                    llm_provider: selectLlmProvider ? selectLlmProvider.value : currentSettings.llm_provider,
+                    openai_api_key: inputOpenaiKey && inputOpenaiKey.value.trim() !== "" ? inputOpenaiKey.value.trim() : currentSettings.openai_api_key,
+                    anthropic_api_key: inputAnthropicKey && inputAnthropicKey.value.trim() !== "" ? inputAnthropicKey.value.trim() : currentSettings.anthropic_api_key,
+                    gemini_api_key: inputGeminiKey && inputGeminiKey.value.trim() !== "" ? inputGeminiKey.value.trim() : currentSettings.gemini_api_key,
+                    deepseek_api_key: inputDeepseekKey && inputDeepseekKey.value.trim() !== "" ? inputDeepseekKey.value.trim() : currentSettings.deepseek_api_key,
+                };
+
+                // 3. Post to API
+                const resp = await fetch(`${API_BASE}/api/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedSettings)
+                });
+
+                if (resp.ok) {
+                    appendConsoleLine("[SYSTEM] Advanced integrations updated successfully.", "line-success");
+                    if (window.ws) window.ws.send("refresh");
+                } else {
+                    appendConsoleLine("[SYSTEM] Failed to save integrations. Check formatting.", "line-error");
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] Integration update fault: ${e.message}`, "line-error");
+            } finally {
+                if (btnSaveInt) {
+                    btnSaveInt.disabled = false;
+                    btnSaveInt.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> SAVE INTEGRATIONS`;
+                }
             }
-        } catch (e) {
-            appendConsoleLine(`[SYSTEM] Simulation fault: ${e.message}`, "line-error");
-        } finally {
-            setTimeout(() => {
-                btnTriggerSimulation.disabled = false;
-                btnTriggerSimulation.innerHTML = `<i class="fa-solid fa-bolt"></i> ${currentLang === 'en' ? 'FIRE SIMULATED ALERT' : 'DISPARAR ALERTA SIMULADA'}`;
-            }, 1000);
-        }
-    });
-
-    // SAVE SETTINGS
-    configForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        
-        // Gather selected exchanges
-        const exchanges = [];
-        if (chkExchangeBinance.checked) exchanges.push('binance');
-        if (chkExchangeBybit.checked) exchanges.push('bybit');
-        if (chkExchangeHyperliquid.checked) exchanges.push('hyperliquid');
-        
-        // Gather selected instruments
-        const instruments = [];
-        if (chkInstSpot.checked) instruments.push('spot');
-        if (chkInstFuture.checked) instruments.push('future');
-
-        if (exchanges.length === 0) {
-            alert(currentLang === 'en' ? "Please select at least one Exchange." : "Por favor, seleccione al menos un Exchange.");
-            return;
-        }
-        if (instruments.length === 0) {
-            alert(currentLang === 'en' ? "Please select at least one Instrument." : "Por favor, seleccione al menos un Instrumento.");
-            return;
-        }
-
-        const selectLlmProvider = document.getElementById('select-llm-provider');
-        const settings = {
-            webhook_url: inputWebhookUrl.value.trim(),
-            openai_api_key: inputOpenaiKey ? inputOpenaiKey.value.trim() : "",
-            anthropic_api_key: inputAnthropicKey ? inputAnthropicKey.value.trim() : "",
-            gemini_api_key: inputGeminiKey ? inputGeminiKey.value.trim() : "",
-            deepseek_api_key: inputDeepseekKey ? inputDeepseekKey.value.trim() : "",
-            llm_provider: selectLlmProvider ? selectLlmProvider.value : "deepseek",
-            interval_sec: parseInt(inputIntervalSec.value),
-            volume_multiplier: parseFloat(inputVolumeThreshold.value),
-            price_velocity_pct: parseFloat(inputPriceThreshold.value),
-            exchanges: exchanges,
-            instruments: instruments,
-            max_pairs: parseInt(inputMaxPairs.value)
-        };
-
-        try {
-            btnSaveSettings.disabled = true;
-            btnSaveSettings.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${currentLang === 'en' ? 'SAVING...' : 'GUARDANDO...'}`;
-
-            const resp = await fetch(`${API_BASE}/api/settings`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(settings)
-            });
-
-            if (resp.ok) {
-                const msg = currentLang === 'en'
-                    ? "[SYSTEM] Settings updated successfully."
-                    : "[SISTEMA] Configuración actualizada correctamente.";
-                appendConsoleLine(msg, "line-success");
-                if (ws) ws.send("refresh");
-            } else {
-                const msg = currentLang === 'en'
-                    ? "[SYSTEM] Failed to save configurations. Check formatting."
-                    : "[SISTEMA] Error al guardar configuraciones. Compruebe el formato.";
-                appendConsoleLine(msg, "line-error");
-            }
-        } catch (e) {
-            appendConsoleLine(`[SYSTEM] API Connection fault on settings write: ${e.message}`, "line-error");
-        } finally {
-            btnSaveSettings.disabled = false;
-            btnSaveSettings.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> ${currentLang === 'en' ? 'SAVE_CONFIGURATION' : 'GUARDAR_CONFIGURACION'}`;
-        }
-    });
+        });
+    }
 
     // CLEAR LOGS
-    btnClearLogs.addEventListener('click', () => {
-        const msg = currentLang === 'en'
-            ? "[SYSTEM] Terminal logs cleared. Link active."
-            : "[SISTEMA] Registros de terminal borrados. Enlace activo.";
-        consoleViewport.innerHTML = `<div class="console-line line-dim">${msg}</div>`;
-    });
+    if (btnClearLogs) {
+        btnClearLogs.addEventListener('click', () => {
+            const msg = currentLang === 'en'
+                ? "[SYSTEM] Terminal logs cleared. Link active."
+                : "[SISTEMA] Registros de terminal borrados. Enlace activo.";
+            consoleViewport.innerHTML = `<div class="console-line line-dim">${msg}</div>`;
+        });
+    }
 
     // FILTER WATCHLIST
     inputSearchPairs.addEventListener('input', renderWatchlist);
@@ -1336,27 +1331,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ACCUMULATION SIMULATION BUTTON
-    if (btnTriggerAccumSim) {
-        btnTriggerAccumSim.addEventListener('click', async () => {
-            try {
-                btnTriggerAccumSim.disabled = true;
-                btnTriggerAccumSim.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${currentLang === 'en' ? 'SCANNING...' : 'ESCANEANDO...'}`;
-                const resp = await fetch(`${API_BASE}/api/trigger_accum_simulation`, { method: 'POST' });
-                if (resp.ok) {
-                    appendConsoleLine('[SYSTEM] Accumulation simulation fired. Check ACCUM_RADAR panel.', 'line-success');
-                }
-            } catch (e) {
-                appendConsoleLine(`[SYSTEM] Accum simulation fault: ${e.message}`, 'line-error');
-            } finally {
-                setTimeout(() => {
-                    btnTriggerAccumSim.disabled = false;
-                    btnTriggerAccumSim.innerHTML = `<i class="fa-solid fa-eye"></i> ${currentLang === 'en' ? 'SIMULATE ACCUM' : 'SIMULAR ACUM'}`;
-                }, 1000);
-            }
-        });
-    }
-
+    // ACCUMULATION SIMULATION BUTTON (Moved to Admin Console)
     // -------------------------------------------------------------------------- //
     // 7A. CMDB ROLE FEATURES LOADER & UPDATER                                    //
     // -------------------------------------------------------------------------- //
@@ -1776,7 +1751,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTranslations();
 
     // Set initial sort indicator classes
-    const defaultSortHeader = document.querySelector(`.watchlist-table th[data-sort="${sortKey}"]`);
+    const defaultSortHeader = document.querySelector(`.tracked-assets-table th[data-sort="${sortKey}"]`);
     if (defaultSortHeader) {
         defaultSortHeader.classList.add(sortOrder);
         const icon = defaultSortHeader.querySelector('i');
@@ -1966,5 +1941,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     initMobileUX();
-});
+}
 
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupApp);
+} else {
+    setupApp();
+}

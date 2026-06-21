@@ -4,7 +4,264 @@ import { currentUser as commonUser } from './common.js';
     const API_BASE = `${window.location.protocol}//${window.location.host}`;
     function appendConsoleLine(msg, level) {
         console.log(`[Admin Console] [${level || 'info'}] ${msg}`);
+        const consoleViewport = document.getElementById('console-viewport');
+        if (consoleViewport) {
+            const line = document.createElement('div');
+            line.className = `console-line ${level}`;
+            line.innerText = msg;
+            consoleViewport.appendChild(line);
+            consoleViewport.scrollTop = consoleViewport.scrollHeight;
+        }
     }
+    
+    // Add Start/Stop logic
+    const btnStartScanner = document.getElementById('btn-start-scanner');
+    const btnStopScanner = document.getElementById('btn-stop-scanner');
+    const btnClearLogs = document.getElementById('btn-clear-logs');
+    
+    if (btnClearLogs) {
+        btnClearLogs.addEventListener('click', () => {
+            const consoleViewport = document.getElementById('console-viewport');
+            if (consoleViewport) consoleViewport.innerHTML = '';
+        });
+    }
+
+    if (btnStartScanner) {
+        btnStartScanner.addEventListener('click', async () => {
+            try {
+                const resp = await fetch(`${API_BASE}/api/start`, { method: 'POST' });
+                if (resp.ok) {
+                    appendConsoleLine("[SYSTEM] Scan initiation command received.", "line-success");
+                    if (window.adminWs) window.adminWs.send("refresh");
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] Failure: ${e.message}`, "line-error");
+            }
+        });
+    }
+
+    if (btnStopScanner) {
+        btnStopScanner.addEventListener('click', async () => {
+            try {
+                const resp = await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
+                if (resp.ok) {
+                    appendConsoleLine("[SYSTEM] Scan termination command received.", "line-warn");
+                    if (window.adminWs) window.adminWs.send("refresh");
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] Failure: ${e.message}`, "line-error");
+            }
+        });
+    }
+
+    function getLogStyleClass(msg) {
+        if (msg.includes("CRITICAL") || msg.includes("Failure") || msg.includes("Failed")) return "line-error";
+        if (msg.includes("🚨") || msg.includes("Rate limit") || msg.includes("⚠️")) return "line-warn";
+        if (msg.includes("💥") || msg.includes("✅") || msg.includes("dispatched") || msg.includes("success")) return "line-success";
+        if (msg.includes("Stage") || msg.includes("Scanning") || msg.includes("initialized")) return "line-dim";
+        return "line-info";
+    }
+
+    // Settings Form Logic
+    const configForm = document.getElementById('scanner-config-form');
+    const inputWebhookUrl = document.getElementById('input-webhook-url');
+    const inputOpenaiKey = document.getElementById('input-openai-key');
+    const inputAnthropicKey = document.getElementById('input-anthropic-key');
+    const inputGeminiKey = document.getElementById('input-gemini-key');
+    const inputDeepseekKey = document.getElementById('input-deepseek-key');
+    const chkExchangeBinance = document.getElementById('chk-exchange-binance');
+    const chkExchangeBybit = document.getElementById('chk-exchange-bybit');
+    const chkExchangeHyperliquid = document.getElementById('chk-exchange-hyperliquid');
+    const chkInstSpot = document.getElementById('chk-inst-spot');
+    const chkInstFuture = document.getElementById('chk-inst-future');
+    const inputIntervalSec = document.getElementById('input-interval-sec');
+    const inputMaxPairs = document.getElementById('input-max-pairs');
+    const inputVolumeThreshold = document.getElementById('input-volume-threshold');
+    const inputPriceThreshold = document.getElementById('input-price-threshold');
+    const btnSaveSettings = document.getElementById('btn-save-settings');
+
+    if (configForm) {
+        configForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            
+            const exchanges = [];
+            if (chkExchangeBinance && chkExchangeBinance.checked) exchanges.push('binance');
+            if (chkExchangeBybit && chkExchangeBybit.checked) exchanges.push('bybit');
+            if (chkExchangeHyperliquid && chkExchangeHyperliquid.checked) exchanges.push('hyperliquid');
+            
+            const instruments = [];
+            if (chkInstSpot && chkInstSpot.checked) instruments.push('spot');
+            if (chkInstFuture && chkInstFuture.checked) instruments.push('future');
+
+            if (exchanges.length === 0) {
+                alert("Please select at least one Exchange.");
+                return;
+            }
+            if (instruments.length === 0) {
+                alert("Please select at least one Instrument.");
+                return;
+            }
+
+            try {
+                if(btnSaveSettings) {
+                    btnSaveSettings.disabled = true;
+                    btnSaveSettings.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> SAVING...`;
+                }
+
+                // Fetch current settings to preserve LLM keys that are no longer in this form
+                const statusResp = await fetch(`${API_BASE}/api/status`);
+                let currentSettings = {};
+                if (statusResp.ok) {
+                    const statusData = await statusResp.json();
+                    currentSettings = statusData.settings || {};
+                }
+
+                const selectLlmProvider = document.getElementById('select-llm-provider');
+                const settings = {
+                    ...currentSettings,
+                    interval_sec: inputIntervalSec ? parseInt(inputIntervalSec.value) : 60,
+                    volume_multiplier: inputVolumeThreshold ? parseFloat(inputVolumeThreshold.value) : 1.8,
+                    price_velocity_pct: inputPriceThreshold ? parseFloat(inputPriceThreshold.value) : 0.8,
+                    exchanges: exchanges,
+                    instruments: instruments,
+                    max_pairs: inputMaxPairs ? parseInt(inputMaxPairs.value) : 300
+                };
+
+                const resp = await fetch(`${API_BASE}/api/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+
+                if (resp.ok) {
+                    appendConsoleLine("[SYSTEM] Settings updated successfully.", "line-success");
+                    if (window.adminWs) window.adminWs.send("refresh");
+                } else {
+                    appendConsoleLine("[SYSTEM] Failed to save configurations. Check formatting.", "line-error");
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] API Connection fault on settings write: ${e.message}`, "line-error");
+            } finally {
+                if(btnSaveSettings) {
+                    btnSaveSettings.disabled = false;
+                    btnSaveSettings.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> SAVE CONFIGURATION`;
+                }
+            }
+        });
+    }
+
+    // TRIGGER SIMULATION ALERTS
+    const btnTriggerSimulation = document.getElementById('btn-trigger-simulation');
+    const btnTriggerAccumSim = document.getElementById('btn-trigger-accum-sim');
+
+    if (btnTriggerSimulation) {
+        btnTriggerSimulation.addEventListener('click', async () => {
+            try {
+                btnTriggerSimulation.disabled = true;
+                btnTriggerSimulation.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> DISPATCHING...`;
+                
+                const resp = await fetch(`${API_BASE}/api/trigger_simulation`, { method: 'POST' });
+                if (resp.ok) {
+                    appendConsoleLine("[SYSTEM] Simulation triggered. Emitting mock Stage 3 telemetry.", "line-success");
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] Simulation fault: ${e.message}`, "line-error");
+            } finally {
+                setTimeout(() => {
+                    btnTriggerSimulation.disabled = false;
+                    btnTriggerSimulation.innerHTML = `<i class="fa-solid fa-bolt"></i> FIRE BREAKOUT`;
+                }, 1000);
+            }
+        });
+    }
+
+    if (btnTriggerAccumSim) {
+        btnTriggerAccumSim.addEventListener('click', async () => {
+            try {
+                btnTriggerAccumSim.disabled = true;
+                btnTriggerAccumSim.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> SCANNING...`;
+                const resp = await fetch(`${API_BASE}/api/trigger_accum_simulation`, { method: 'POST' });
+                if (resp.ok) {
+                    appendConsoleLine('[SYSTEM] Accumulation simulation fired. Check ACCUM_RADAR panel.', 'line-success');
+                }
+            } catch (e) {
+                appendConsoleLine(`[SYSTEM] Accum simulation fault: ${e.message}`, 'line-error');
+            } finally {
+                setTimeout(() => {
+                    btnTriggerAccumSim.disabled = false;
+                    btnTriggerAccumSim.innerHTML = `<i class="fa-solid fa-eye"></i> SIMULATE ACCUM`;
+                }, 1000);
+            }
+        });
+    }
+
+    // Connect admin websocket
+    function connectAdminWebSocket() {
+        const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const WS_URL = `${WS_PROTOCOL}//${window.location.host}/api/ws/logs`;
+        const ws = new WebSocket(WS_URL);
+        window.adminWs = ws;
+        
+        ws.onopen = () => appendConsoleLine("[SYSTEM] Admin WebSocket linked. Streaming logs.", "line-success");
+        ws.onmessage = (event) => {
+            try {
+                const payload = JSON.parse(event.data);
+                if (payload.type === 'HISTORY') {
+                    const consoleViewport = document.getElementById('console-viewport');
+                    if (consoleViewport) consoleViewport.innerHTML = '';
+                    payload.logs.forEach(log => appendConsoleLine(log, getLogStyleClass(log)));
+                    
+                    if (payload.status.active) {
+                        if (btnStartScanner) { btnStartScanner.disabled = true; btnStartScanner.classList.add('disabled'); }
+                        if (btnStopScanner) { btnStopScanner.disabled = false; btnStopScanner.classList.remove('disabled'); }
+                    } else {
+                        if (btnStartScanner) { btnStartScanner.disabled = false; btnStartScanner.classList.remove('disabled'); }
+                        if (btnStopScanner) { btnStopScanner.disabled = true; btnStopScanner.classList.add('disabled'); }
+                    }
+                    
+                    // Populate config inputs from backend state
+                    if (payload.status.settings) {
+                        const s = payload.status.settings;
+                        if (inputIntervalSec) inputIntervalSec.value = s.interval_sec;
+                        if (inputMaxPairs) inputMaxPairs.value = s.max_pairs;
+                        if (inputVolumeThreshold) inputVolumeThreshold.value = s.volume_multiplier;
+                        if (inputPriceThreshold) inputPriceThreshold.value = s.price_velocity_pct;
+                        
+                        if (chkExchangeBinance) chkExchangeBinance.checked = s.exchanges.includes('binance');
+                        if (chkExchangeBybit) chkExchangeBybit.checked = s.exchanges.includes('bybit');
+                        if (chkExchangeHyperliquid) chkExchangeHyperliquid.checked = s.exchanges.includes('hyperliquid');
+                        
+                        if (chkInstSpot) chkInstSpot.checked = s.instruments.includes('spot');
+                        if (chkInstFuture) chkInstFuture.checked = s.instruments.includes('future');
+                        
+                        if (inputWebhookUrl) inputWebhookUrl.value = s.webhook_url || "";
+                        if (inputOpenaiKey && s.openai_api_key) inputOpenaiKey.value = s.openai_api_key;
+                        if (inputAnthropicKey && s.anthropic_api_key) inputAnthropicKey.value = s.anthropic_api_key;
+                        if (inputGeminiKey && s.gemini_api_key) inputGeminiKey.value = s.gemini_api_key;
+                        if (inputDeepseekKey && s.deepseek_api_key) inputDeepseekKey.value = s.deepseek_api_key;
+                        
+                        const selectLlmProvider = document.getElementById('select-llm-provider');
+                        if (selectLlmProvider && s.llm_provider) {
+                            selectLlmProvider.value = s.llm_provider;
+                        }
+                    }
+                } else if (payload.type === 'LOG') {
+                    appendConsoleLine(payload.message, getLogStyleClass(payload.message));
+                } else if (payload.type === 'STATUS_REFRESH') {
+                    if (payload.status.active) {
+                        if (btnStartScanner) { btnStartScanner.disabled = true; btnStartScanner.classList.add('disabled'); }
+                        if (btnStopScanner) { btnStopScanner.disabled = false; btnStopScanner.classList.remove('disabled'); }
+                    } else {
+                        if (btnStartScanner) { btnStartScanner.disabled = false; btnStartScanner.classList.remove('disabled'); }
+                        if (btnStopScanner) { btnStopScanner.disabled = true; btnStopScanner.classList.add('disabled'); }
+                    }
+                }
+            } catch(e){}
+        };
+        ws.onclose = () => setTimeout(connectAdminWebSocket, 3000);
+    }
+    
+    connectAdminWebSocket();
     const adminConsolePanel = document.getElementById('admin-console-panel');
     const adminUsersTableBody = document.getElementById('admin-users-table-body');
     const adminTabUsers = document.getElementById('admin-tab-users');
@@ -356,7 +613,7 @@ import { currentUser as commonUser } from './common.js';
                 if (adminTabUsers) adminTabUsers.classList.remove('active');
                 if (adminTabFeatures) adminTabFeatures.classList.remove('active');
                 if (adminViewUsers) adminViewUsers.style.display = 'none';
-                if (adminViewStats) adminViewStats.style.display = 'block';
+                if (adminViewStats) adminViewStats.style.display = 'flex';
                 if (adminViewFeatures) adminViewFeatures.style.display = 'none';
                 if (adminSubTitle) adminSubTitle.textContent = 'SYSTEM_DIAGNOSTICS';
                 loadAdminStats();

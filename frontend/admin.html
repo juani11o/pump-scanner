@@ -30,13 +30,27 @@
     <div class="glow-orb orb-2"></div>
     <div class="terminal-container">
         <header class="terminal-header">
-            <div class="header-logo">
-                <div class="pulse-icon red-pulse" id="scanner-state-pulse"></div>
-                <h1>PUMP_SCANNER//<span class="version-tag">v2.2.0-ACCUM</span></h1>
+            <!-- LEFT GROUP -->
+            <div class="header-group-left" style="display: flex; gap: 32px; align-items: center;">
+                <div class="header-logo">
+                    <div class="pulse-icon red-pulse" id="scanner-state-pulse"></div>
+                    <h1>PUMP_SCANNER//<span class="version-tag">v2.2.0-ACCUM</span></h1>
+                </div>
+                
+                <div class="header-stats-inline" style="display: flex; gap: 32px;">
+                    <div class="stat-box" style="align-items: flex-start;">
+                        <span class="stat-label" data-translate="RATE_LIMIT">RATE_LIMIT</span>
+                        <span class="stat-value text-green" id="rate-limit-status">NOMINAL</span>
+                    </div>
+                    <div class="stat-box" style="align-items: flex-start;">
+                        <span class="stat-label" data-translate="TRACKED_PAIRS">TRACKED_PAIRS</span>
+                        <span class="stat-value text-cyan" id="tracked-pairs-count">0</span>
+                    </div>
+                </div>
             </div>
 
-            <!-- Navigation Tabs (desktop) -->
-            <nav class="header-nav" id="header-nav" style="display: none;">
+            <!-- Navigation Tabs (desktop) - CENTER -->
+            <nav class="header-nav" id="header-nav" style="display: none; margin: 0 auto;">
                 <a href="/" class="nav-item" id="nav-dashboard">
                     <i class="fa-solid fa-chart-pie"></i> <span data-translate="DASHBOARD">DASHBOARD</span>
                 </a>
@@ -44,48 +58,38 @@
                     <i class="fa-solid fa-user-shield"></i> <span data-translate="ADMIN_CONSOLE">ADMIN_CONSOLE</span>
                 </a>
                 <a href="/calculator.html" class="nav-item" id="nav-compound">
-                    <i class="fa-solid fa-calculator"></i> <span data-translate="COMPOUND_INTEREST">COMPOUND
-                        INTEREST</span>
+                    <i class="fa-solid fa-calculator"></i> <span data-translate="COMPOUND_INTEREST">COMPOUND INTEREST</span>
                 </a>
                 <a href="/trades.html" class="nav-item" id="nav-ledger">
                     <i class="fa-solid fa-book"></i> <span data-translate="MY_TRADES_LEDGER">MY_TRADES (🔒)</span>
                 </a>
             </nav>
 
-            <!-- Toggles Deck -->
-            <div class="header-controls">
-                <!-- User Profile Badge -->
-                <div class="user-profile-badge" id="user-profile-badge" style="display: none;">
-                    <img src="" alt="Avatar" id="user-avatar" class="user-avatar">
-                    <div class="user-info-text">
-                        <span id="user-name" class="user-name">Loading...</span>
-                        <span id="user-role-badge" class="badge">USER</span>
+            <!-- RIGHT GROUP -->
+            <div class="header-group-right" style="display: flex; gap: 32px; align-items: center;">
+                <div class="header-controls" style="margin: 0;">
+                    <div class="user-profile-badge" id="user-profile-badge" style="display: none;">
+                        <img src="" alt="Avatar" id="user-avatar" class="user-avatar">
+                        <div class="user-info-text">
+                            <span id="user-name" class="user-name">Loading...</span>
+                            <span id="user-role-badge" class="badge">USER</span>
+                        </div>
+                        <button type="button" class="btn-logout" id="btn-logout" title="Sign Out">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
                     </div>
-                    <button type="button" class="btn-logout" id="btn-logout" title="Sign Out">
-                        <i class="fa-solid fa-right-from-bracket"></i>
-                        </a>
+
+                    <button type="button" class="btn-control" id="btn-theme-toggle" title="Toggle Light/Dark Mode">
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
+                    <button type="button" class="btn-control" id="btn-lang-toggle" title="Switch Language">
+                        <span>ES</span>
+                    </button>
                 </div>
-
-                <button type="button" class="btn-control" id="btn-theme-toggle" title="Toggle Light/Dark Mode">
-                    <i class="fa-solid fa-moon"></i>
-                </button>
-                <button type="button" class="btn-control" id="btn-lang-toggle" title="Switch Language">
-                    <span>ES</span>
-                    </a>
-            </div>
-
-            <div class="header-stats">
-                <div class="stat-box">
+                
+                <div class="stat-box" style="align-items: flex-end;">
                     <span class="stat-label" data-translate="SYSTEM_STATUS">SYSTEM_STATUS</span>
                     <span class="stat-value text-red" id="system-status-text">OFFLINE</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label" data-translate="TRACKED_PAIRS">TRACKED_PAIRS</span>
-                    <span class="stat-value text-cyan" id="tracked-pairs-count">0</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-label" data-translate="RATE_LIMIT">RATE_LIMIT</span>
-                    <span class="stat-value text-green" id="rate-limit-status">NOMINAL</span>
                 </div>
             </div>
         </header>
@@ -148,7 +152,149 @@
                 </div>
 
                 <!-- Tab Content: System Diagnostics -->
-                <div id="admin-view-stats" class="admin-sub-view" style="display: none;">
+                <div id="admin-view-stats" class="admin-sub-view" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+                    
+                    <!-- Scanner Engine Controls -->
+                    <div class="control-group action-buttons" style="margin-bottom: 20px; display: flex; gap: 10px;">
+                        <button class="btn btn-primary" id="btn-start-scanner">
+                            <i class="fa-solid fa-play"></i> <span data-translate="START_SCANNER">START SCANNER</span>
+                        </button>
+                        <button class="btn btn-danger disabled" id="btn-stop-scanner" disabled>
+                            <i class="fa-solid fa-stop"></i> <span data-translate="STOP_SCANNER">STOP SCANNER</span>
+                        </button>
+                    </div>
+
+                    <!-- Config Settings Form (Moved from User Dashboard) -->
+                    <div class="inner-panel" style="margin-bottom: 20px;">
+                        <div class="panel-header">
+                            <i class="fa-solid fa-sliders text-cyan"></i>
+                            <h2 data-translate="CONTROL_DECK">SCANNER CONFIGURATION</h2>
+                        </div>
+                        <div class="panel-body">
+                            <form id="scanner-config-form" class="config-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>
+                                            <span data-translate="EXCHANGES">EXCHANGES</span>
+                                            <span class="tooltip-container">
+                                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                                <span class="tooltip-content" data-translate="TOOLTIP_EXCHANGES">Select the API liquidity pools to source assets from.</span>
+                                            </span>
+                                        </label>
+                                        <div class="checkbox-group">
+                                            <label class="custom-checkbox">
+                                                <input type="checkbox" name="exchange" value="binance" checked id="chk-exchange-binance">
+                                                <span class="checkmark"></span> BINANCE
+                                            </label>
+                                            <label class="custom-checkbox">
+                                                <input type="checkbox" name="exchange" value="bybit" id="chk-exchange-bybit">
+                                                <span class="checkmark"></span> BYBIT
+                                            </label>
+                                            <label class="custom-checkbox">
+                                                <input type="checkbox" name="exchange" value="hyperliquid" id="chk-exchange-hyperliquid">
+                                                <span class="checkmark"></span> HYPERLIQUID
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>
+                                            <span data-translate="INSTRUMENTS">INSTRUMENTS</span>
+                                            <span class="tooltip-container">
+                                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                                <span class="tooltip-content" data-translate="TOOLTIP_INSTRUMENTS">Target spot exchange books or futures leverage swaps contracts.</span>
+                                            </span>
+                                        </label>
+                                        <div class="checkbox-group">
+                                            <label class="custom-checkbox">
+                                                <input type="checkbox" name="instrument" value="spot" checked id="chk-inst-spot">
+                                                <span class="checkmark"></span> SPOT
+                                            </label>
+                                            <label class="custom-checkbox">
+                                                <input type="checkbox" name="instrument" value="future" id="chk-inst-future">
+                                                <span class="checkmark"></span> FUTURES
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="input-interval-sec">
+                                            <span data-translate="SCAN_INTERVAL">SCAN_INTERVAL (SEC)</span>
+                                            <span class="tooltip-container">
+                                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                                <span class="tooltip-content" data-translate="TOOLTIP_INTERVAL">Refresh cooldown period between active scanning cycles.</span>
+                                            </span>
+                                        </label>
+                                        <input type="number" id="input-interval-sec" min="10" max="3600" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="input-max-pairs">
+                                            <span data-translate="MAX_PAIRS_TRACKED">MAX_PAIRS_TRACKED</span>
+                                            <span class="tooltip-container">
+                                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                                <span class="tooltip-content" data-translate="TOOLTIP_MAX_PAIRS">Limit discoverable pairs sorted by 24h volume to focus processing bandwidth.</span>
+                                            </span>
+                                        </label>
+                                        <input type="number" id="input-max-pairs" min="5" max="500" required>
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="input-volume-threshold">
+                                            <span data-translate="VOL_MULTIPLIER_GATE">VOL_MULTIPLIER_GATE</span>
+                                            <span class="tooltip-container">
+                                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                                <span class="tooltip-content" data-translate="TOOLTIP_VOL_MULT">How many times the current 5m candle volume must exceed the average volume of the previous 49 candles.</span>
+                                            </span>
+                                        </label>
+                                        <div class="input-suffix">
+                                            <input type="number" id="input-volume-threshold" step="0.1" min="1.0" max="20.0" required>
+                                            <span class="suffix">x</span>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="input-price-threshold">
+                                            <span data-translate="PRICE_VELOCITY_GATE">PRICE_VELOCITY_GATE</span>
+                                            <span class="tooltip-container">
+                                                <i class="fa-solid fa-circle-question tooltip-trigger"></i>
+                                                <span class="tooltip-content" data-translate="TOOLTIP_PRICE_VEL">The minimum price gain percentage over the last 2 periods (10 minutes) to trigger breakout status.</span>
+                                            </span>
+                                        </label>
+                                        <div class="input-suffix">
+                                            <input type="number" id="input-price-threshold" step="0.1" min="0.1" max="15.0" required>
+                                            <span class="suffix">%</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Advanced Integrations Section (Moved to Dashboard) -->
+
+                                <div class="form-actions" style="margin-top: 15px;">
+                                    <button type="submit" class="btn btn-secondary" id="btn-save-settings">
+                                        <i class="fa-solid fa-floppy-disk"></i> <span data-translate="SAVE_CONFIGURATION">SAVE CONFIGURATION</span>
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <div class="divider" style="margin: 15px 0; border-bottom: 1px solid rgba(255,255,255,0.05);"></div>
+                            
+                            <div class="simulation-deck" id="simulation-deck">
+                                <label data-translate="INTELLIGENCE_SIMULATOR">INTELLIGENCE_SIMULATOR</label>
+                                <p class="panel-subtext" style="font-size: 10px; color: var(--text-dim); margin-bottom: 8px;">Trigger mock breakouts/accumulations to test alerts, UI logic, and webhook payload routing.</p>
+                                <div style="display: flex; gap: 10px;">
+                                    <button class="btn btn-neon btn-sm" id="btn-trigger-simulation">
+                                        <i class="fa-solid fa-bolt"></i> FIRE BREAKOUT
+                                    </button>
+                                    <button class="btn btn-purple btn-sm" id="btn-trigger-accum-sim">
+                                        <i class="fa-solid fa-eye"></i> SIMULATE ACCUM
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="admin-stats-grid">
                         <div class="stat-card">
                             <i class="fa-solid fa-users fa-2x text-blue"></i>
@@ -169,6 +315,23 @@
                             <i class="fa-solid fa-bell fa-2x text-red"></i>
                             <div class="stat-value" id="stat-alerts-dispatched">0</div>
                             <div class="stat-label">ALERTS DISPATCHED</div>
+                        </div>
+                    </div>
+
+                    <!-- Logs view -->
+                    <div class="inner-panel console-logs" style="margin-top: 20px;">
+                        <div class="panel-header">
+                            <i class="fa-solid fa-terminal text-green"></i>
+                            <h2 data-translate="SYSTEM_LOGS">SYSTEM_LOGS</h2>
+                            <button class="btn-icon" id="btn-clear-logs" title="Clear console">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                        <div class="panel-body console-wrapper">
+                            <div class="console-viewport" id="console-viewport">
+                                <div class="console-line line-dim">[SYSTEM] Admin Terminal initialized. Awaiting WebSocket link...
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

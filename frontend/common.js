@@ -6,8 +6,7 @@ export let currentLang = localStorage.getItem('lang') || 'en';
 
 const API_BASE = `${window.location.protocol}//${window.location.host}`;
 
-document.addEventListener('DOMContentLoaded', () => {
-
+function setupCommon() {
     // Auth DOM Elements injected from app.js
         const loginOverlay = document.getElementById('login-overlay');
     const userProfileBadge = document.getElementById('user-profile-badge');
@@ -301,7 +300,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     initCommon();
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupCommon);
+} else {
+    setupCommon();
+}
 
 async function initCommon() {
     initTheme();
@@ -721,6 +726,17 @@ async function fetchStatus() {
             }
             if (trackedPairsCount) {
                 trackedPairsCount.innerText = status.monitored_count;
+            }
+            
+            const rateLimitStatus = document.getElementById('rate-limit-status');
+            if (rateLimitStatus) {
+                if (status.sequential_mode) {
+                    rateLimitStatus.innerText = "SATURATED";
+                    rateLimitStatus.className = "stat-value text-orange";
+                } else {
+                    rateLimitStatus.innerText = "NOMINAL";
+                    rateLimitStatus.className = "stat-value text-green";
+                }
             }
             
             if (mssStatus) {
